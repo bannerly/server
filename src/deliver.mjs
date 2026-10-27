@@ -93,7 +93,8 @@ export async function publishAllSnapshots(repo, putSnap) {
 
 // 指定した JST の1時間バケットを events から集計して stats_hourly へ冪等に書く
 export async function aggregateHour(repo, hourKey) {
-  const events = await repo.listEvents();
+  const startTs = Date.parse(`${hourKey}:00:00+09:00`);
+  const events = await repo.listEventsInRange(startTs, startTs + 3600000);
   const byCampaign = new Map();
   for (const e of events) {
     if (hourKeyOf(e.ts) !== hourKey) continue;

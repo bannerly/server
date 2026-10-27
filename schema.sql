@@ -100,6 +100,20 @@ CREATE TABLE IF NOT EXISTS events_raw (
 );
 CREATE INDEX IF NOT EXISTS idx_events_ts ON events_raw(ts);
 CREATE INDEX IF NOT EXISTS idx_events_campaign ON events_raw(campaign_id);
+CREATE TABLE IF NOT EXISTS counters_total (
+  campaign_id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  zone_id TEXT NOT NULL,
+  imp INTEGER NOT NULL DEFAULT 0,
+  click INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS counters_daily (
+  campaign_id TEXT NOT NULL,
+  day TEXT NOT NULL,
+  imp INTEGER NOT NULL DEFAULT 0,
+  click INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (campaign_id, day)
+);
 CREATE TABLE IF NOT EXISTS stats_hourly (
   hour TEXT NOT NULL,
   tenant_id TEXT NOT NULL,

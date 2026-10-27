@@ -3,7 +3,7 @@
 // トークンは SHA-256 ハッシュで保存し、コンソールは自テナントのデータだけを表示・操作できる。
 import { esc } from "./admin.mjs";
 import { today } from "./deliver.mjs";
-import { stripeEnabled, createConnectAccount, createAccountLink, createOrderCheckout, sendOrderInvoice } from "./stripe.mjs";
+import { stripeEnabled, createConnectAccount, createAccountLink, createOrderCheckout, sendOrderInvoice, createConnectWebhookEndpoint } from "./stripe.mjs";
 
 const RESERVED = new Set(["admin", "signup", "tenant", "ad", "tag", "imp", "click", "demo", "stripe", "api"]);
 const slugOk = s => /^[a-z0-9][a-z0-9-]{2,31}$/.test(s) && !RESERVED.has(s);
@@ -25,7 +25,16 @@ function page(title, body, extraHeaders = {}) {
 }
 const redirect = loc => new Response(null, { status: 303, headers: { location: loc } });
 
-export async function handleSignup(req, url, repo, newId) {
+export async function handleSignup(req, url, repo, newId, env = {}) {
+  // セルフホスト型: 登録は「最初の管理者を作るまで」だけ開く（ブートストラップ）。
+  // 常時開放したい場合のみ ALLOW_OPEN_SIGNUP=1 を設定する（中央集約型 SaaS 用途）。
+  const users = await repo.listUsers();
+  if (env.ALLOW_OPEN_SIGNUP !== "1" && users.length > 0) {
+    return page("登録は終了しています", `
+      <h1>登録は終了しています</h1>
+      <p>bannerly は、運用者が各自の Cloudflare にデプロイするセルフホスト型です。このデプロイでは新規テナント登録を受け付けていません。</p>
+      <p>運用者は <a href="/tenant">テナントコンソール</a> または <a href="/admin">管理画面</a> を使ってください。</p>`);
+  }
   if (req.method === "GET") {
     return page("テナント登録", `
       <h1>bannerly テナント登録</h1>
@@ -103,6 +112,19 @@ export async function handleTenant(req, url, repo, helpers, newId, env) {
       }
       return redirect("/tenant");
     }
+    if (parts[1] === "stripe" && parts[2] === "webhook") {
+      if (!stripeEnabled(env)) return new Response("Stripe が未設定です（STRIPE_SECRET_KEY）", { status: 501 });
+      try {
+        const ep = await createConnectWebhookEndpoint(env);
+        return page("Webhook 作成完了", `
+          <h1>Webhook エンドポイントを作成しました</h1>
+          <p>エンドポイント ID: <code>${esc(ep.id)}</code><br>URL: <code>${esc(ep.url)}</code></p>
+          <p>署名シークレット（<strong>この画面でだけ表示されます</strong>）:</p>
+          <p style="font-size:16px;background:#f4f4f4;padding:12px;"><code>${esc(ep.secret || "")}</code></p>
+          <p>これをデプロイ側の <code>STRIPE_WEBHOOK_SECRET</code> に設定してください（Cloudflare: <code>wrangler secret put STRIPE_WEBHOOK_SECRET</code>）。設定するまで Webhook による支払い反映は動きません。</p>
+          <p><a href="/tenant">コンソールへ戻る</a></p>`);
+      } catch (e) { return new Response(`Stripe エラー: ${esc(e.message)}`, { status: 502 }); }
+    }
     if (parts[1] === "stripe" && parts[2] === "connect") {
       if (!stripeEnabled(env)) return new Response("Stripe が未設定です（STRIPE_SECRET_KEY）", { status: 501 });
       try {
@@ -157,7 +179,9 @@ export async function handleTenant(req, url, repo, helpers, newId, env) {
     return `<tr><td>${esc(adv ? adv.name : o.advertiser_id)}</td><td>${esc(plan ? plan.name : o.plan_id)}</td><td>${o.starts_at}〜${o.ends_at}</td><td>${esc(o.status)}</td><td>${esc(o.payment_status)}${invLink}</td><td>${pay}</td></tr>`;
   }).join("");
   const stripeBox = tenant.stripe_account_id
-    ? `<p>Stripe 接続済み（アカウント: <code>${esc(tenant.stripe_account_id)}</code> / 課金可否: ${tenant.stripe_charges_enabled ? "有効" : "確認中"})</p>`
+    ? `<p>Stripe 接続済み（アカウント: <code>${esc(tenant.stripe_account_id)}</code> / 課金可否: ${tenant.stripe_charges_enabled ? "有効" : "確認中"})</p>
+       <form method="post" action="/tenant/stripe/webhook"><button>Webhook エンドポイントを自動作成</button></form>
+       <p style="font-size:13px;color:#555;">支払い・請求書・接続状態の自動反映に必要です。作成時に表示される署名シークレットを <code>STRIPE_WEBHOOK_SECRET</code> に設定してください。</p>`
     : `<form method="post" action="/tenant/stripe/connect"><button>Stripe を接続する（Direct charges）</button></form>
        <p style="font-size:13px;color:#555;">広告主への請求は、あなたの Stripe アカウントから直接行われます（プラットフォームは資金を預かりません）。請求書の発行・メール送信も Stripe から行えます。</p>`;
   return page("テナントコンソール", `

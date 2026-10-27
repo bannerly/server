@@ -119,6 +119,10 @@ export async function handleAdmin(req, url, repo, helpers, newId) {
       if (o) await repo.updateOrder(o.id, { status: "rejected" });
       return redirect("/admin");
     }
+    if (sub === "rebuild-counters") {
+      await repo.rebuildCounters();
+      return redirect("/admin/report");
+    }
     if (sub === "aggregate") {
       const hour = g("hour") || hourKeyOf(Date.now() - 3600000);
       await aggregateHour(repo, hour);
@@ -237,6 +241,7 @@ export async function handleAdmin(req, url, repo, helpers, newId) {
       <tr><th>テナント</th><th>枠</th><th>キャンペーン</th><th>広告主</th><th>種別</th><th>表示</th><th>クリック</th><th>CTR</th></tr>${tbl || '<tr><td colspan="8">データなし</td></tr>'}</table>
       <h2>時間次集計（stats_hourly）</h2>
       <form method="post" action="/admin/aggregate"><label>対象時（例 2026-10-27T15） <input name="hour" placeholder="空=前時"></label> <button>集計する</button></form>
+      <form method="post" action="/admin/rebuild-counters" style="margin-top:8px;"><button>配信カウンタを再構築（生イベントから再計算）</button></form>
       <table border="1" cellspacing="0" cellpadding="6" style="border-collapse:collapse;font-size:14px;">
       <tr><th>時</th><th>キャンペーン</th><th>表示</th><th>クリック</th></tr>${statsRows || '<tr><td colspan="4">未集計</td></tr>'}</table>`);
   }

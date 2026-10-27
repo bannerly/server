@@ -8,6 +8,8 @@ const env = {
   ADMIN_TOKEN: process.env.ADMIN_TOKEN || null,
   STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY || "",
   STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET || "",
+  STRIPE_ACCOUNT_TYPE: process.env.STRIPE_ACCOUNT_TYPE || "standard",
+  ALLOW_OPEN_SIGNUP: process.env.ALLOW_OPEN_SIGNUP || "",
   PLATFORM_FEE_BPS: process.env.PLATFORM_FEE_BPS || "0",
   PUBLIC_BASE_URL: process.env.PUBLIC_BASE_URL || "http://localhost:8788",
 };

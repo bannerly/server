@@ -42,6 +42,8 @@ function deliveryStore(env, repo) {
   };
 }
 
+const isBot = req => /bot|crawler|spider|headless|curl|wget|python-requests/i.test(req.headers.get("user-agent") || "");
+
 async function emitEvent(env, repo, ev) {
   if (env.EVENTS) { await env.EVENTS.send(ev); return; }
   await repo.insertEvent(ev);
@@ -62,10 +64,7 @@ async function serveAd(env, repo, zoneId, req, url) {
     region: url.searchParams.get("region") || req.headers.get("x-region") || (req.cf && req.cf.region) || null,
     hour: parts.hour, weekday: parts.weekday, cookie: req.headers.get("cookie") || "",
   };
-  const countsFn = async c => ({
-    total: await repo.getCount(c.id, null, jstParts),
-    today: await repo.getCount(c.id, parts.date, jstParts),
-  });
+  const countsFn = c => repo.getImpCounts(c.id, parts.date);
   const picked = await pickFromSnapshot(snapshot, ctx, countsFn);
   if (!picked) {
     if (url.searchParams.get("format") === "json") return Response.json({ zone: zoneId, source: "backfill", html: zone.backfill_html });
@@ -120,7 +119,7 @@ export default {
       const d = await ds.get(parts[1]);
       if (d && !d.counted) {
         await ds.mark(parts[1], d);
-        await emitEvent(env, repo, { id: newId("ev"), ts: Date.now(), kind: "imp", tenant_id: d.tenant_id, zone_id: d.zone_id, campaign_id: d.campaign_id, banner_id: d.banner_id });
+        if (!isBot(req)) await emitEvent(env, repo, { id: newId("ev"), ts: Date.now(), kind: "imp", tenant_id: d.tenant_id, zone_id: d.zone_id, campaign_id: d.campaign_id, banner_id: d.banner_id });
       }
       return new Response(GIF, { headers: { "content-type": "image/gif", "cache-control": "no-store" } });
     }
@@ -131,12 +130,12 @@ export default {
       if (d) {
         const banner = await repo.getBanner(d.banner_id);
         if (banner) dest = banner.link_url || "/";
-        await emitEvent(env, repo, { id: newId("ev"), ts: Date.now(), kind: "click", tenant_id: d.tenant_id, zone_id: d.zone_id, campaign_id: d.campaign_id, banner_id: d.banner_id });
+        if (!isBot(req)) await emitEvent(env, repo, { id: newId("ev"), ts: Date.now(), kind: "click", tenant_id: d.tenant_id, zone_id: d.zone_id, campaign_id: d.campaign_id, banner_id: d.banner_id });
       }
       return new Response(null, { status: 302, headers: { location: dest } });
     }
 
-    if (url.pathname === "/signup") return handleSignup(req, url, repo, newId);
+    if (url.pathname === "/signup") return handleSignup(req, url, repo, newId, env);
 
     if (parts[0] === "tenant") {
       const snap = snapStore(env, repo);

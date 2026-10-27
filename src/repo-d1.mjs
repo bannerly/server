@@ -1,5 +1,6 @@
 // D1 用リポジトリ。repo-local.mjs と同一インターフェース（戻り値の形を揃える）。
 // 注意: このファイルはローカル環境では実行検証していない（初回は wrangler で要確認）。
+import { jstParts } from "./deliver.mjs";
 export function newId(prefix) {
   return `${prefix}-${Math.random().toString(16).slice(2, 10)}${Date.now().toString(16).slice(-4)}`;
 }
@@ -68,8 +69,43 @@ export class D1Repo {
     await this.run("UPDATE orders SET status=?, campaign_id=?, payment_status=?, stripe_session_id=?, stripe_invoice_id=?, stripe_invoice_url=? WHERE id=?", n.status, n.campaign_id || null, n.payment_status || "unpaid", n.stripe_session_id || "", n.stripe_invoice_id || "", n.stripe_invoice_url || "", id);
     return n;
   }
-  async insertEvent(e) { await this.run("INSERT INTO events_raw (id,ts,kind,tenant_id,zone_id,campaign_id,banner_id) VALUES (?,?,?,?,?,?,?)", e.id, e.ts, e.kind, e.tenant_id, e.zone_id, e.campaign_id, e.banner_id); return e; }
+  async insertEvent(e) {
+    await this.run("INSERT INTO events_raw (id,ts,kind,tenant_id,zone_id,campaign_id,banner_id) VALUES (?,?,?,?,?,?,?)", e.id, e.ts, e.kind, e.tenant_id, e.zone_id, e.campaign_id, e.banner_id);
+    const day = jstParts(e.ts).date;
+    const imp = e.kind === "imp" ? 1 : 0, click = e.kind === "click" ? 1 : 0;
+    await this.run(`INSERT INTO counters_total (campaign_id,tenant_id,zone_id,imp,click) VALUES (?,?,?,?,?)
+      ON CONFLICT(campaign_id) DO UPDATE SET imp=imp+excluded.imp, click=click+excluded.click`,
+      e.campaign_id, e.tenant_id, e.zone_id, imp, click);
+    await this.run(`INSERT INTO counters_daily (campaign_id,day,imp,click) VALUES (?,?,?,?)
+      ON CONFLICT(campaign_id,day) DO UPDATE SET imp=imp+excluded.imp, click=click+excluded.click`,
+      e.campaign_id, day, imp, click);
+    return e;
+  }
   async listEvents() { return this.all("SELECT * FROM events_raw ORDER BY ts"); }
+  async listEventsInRange(startTs, endTs) { return this.all("SELECT * FROM events_raw WHERE ts>=? AND ts<? ORDER BY ts", startTs, endTs); }
+  async getImpCounts(campaignId, dateStr) {
+    const t = await this.first("SELECT imp FROM counters_total WHERE campaign_id=?", campaignId);
+    const d = await this.first("SELECT imp FROM counters_daily WHERE campaign_id=? AND day=?", campaignId, dateStr);
+    return { total: t ? t.imp : 0, today: d ? d.imp : 0 };
+  }
+  async rebuildCounters() {
+    const events = await this.listEvents();
+    await this.run("DELETE FROM counters_total");
+    await this.run("DELETE FROM counters_daily");
+    const totals = new Map(), dailies = new Map();
+    for (const e of events) {
+      const tk = e.campaign_id;
+      if (!totals.has(tk)) totals.set(tk, { campaign_id: tk, tenant_id: e.tenant_id, zone_id: e.zone_id, imp: 0, click: 0 });
+      const day = jstParts(e.ts).date;
+      const dk = `${tk}|${day}`;
+      if (!dailies.has(dk)) dailies.set(dk, { campaign_id: tk, day, imp: 0, click: 0 });
+      if (e.kind === "imp") { totals.get(tk).imp++; dailies.get(dk).imp++; }
+      else if (e.kind === "click") { totals.get(tk).click++; dailies.get(dk).click++; }
+    }
+    for (const t of totals.values()) await this.run("INSERT INTO counters_total (campaign_id,tenant_id,zone_id,imp,click) VALUES (?,?,?,?,?)", t.campaign_id, t.tenant_id, t.zone_id, t.imp, t.click);
+    for (const d of dailies.values()) await this.run("INSERT INTO counters_daily (campaign_id,day,imp,click) VALUES (?,?,?,?)", d.campaign_id, d.day, d.imp, d.click);
+    return totals.size;
+  }
   async getCount(campaignId, dateStr = null, partsFn) {
     // 本番ではイベント表からの集計（インデックス前提）。規模が大きくなれば KV カウンタへ移行する。
     const rows = await this.all("SELECT ts FROM events_raw WHERE campaign_id=? AND kind='imp'", campaignId);

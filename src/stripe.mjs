@@ -102,6 +102,18 @@ export async function sendOrderInvoice(env, tenant, order, plan, advertiser) {
   return sent; // hosted_invoice_url を含む
 }
 
+// Connect 用 Webhook エンドポイントを自動作成する（secret は作成時に一度だけ返る）
+export async function createConnectWebhookEndpoint(env) {
+  const cfg = stripeConfig(env);
+  if (!cfg.baseUrl) throw new Error("PUBLIC_BASE_URL が未設定です");
+  return stripeReq(env, "/v1/webhook_endpoints", {
+    url: `${cfg.baseUrl}/stripe/webhook`,
+    connect: true,
+    description: "bannerly (Connect events)",
+    enabled_events: ["checkout.session.completed", "invoice.paid", "invoice.payment_failed", "account.updated"],
+  });
+}
+
 // Webhook 署名検証（Stripe-Signature: t=...,v1=... / HMAC-SHA256）
 export async function verifyWebhook(env, rawBody, sigHeader) {
   const secret = stripeConfig(env).webhookSecret;

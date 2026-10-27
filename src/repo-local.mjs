@@ -1,4 +1,5 @@
 // ローカル用リポジトリ（JSONファイル）。repo-d1.mjs と同一インターフェース。
+import { jstParts } from "./deliver.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -59,6 +60,8 @@ function seed() {
     ],
     orders: [],
     events: [],
+    counters_total: [],
+    counters_daily: [],
     stats_hourly: [],
     deliveries: {},
     snapshots: {},
@@ -102,8 +105,43 @@ export class LocalRepo {
   async createOrder(o) { const db = this.load(); db.orders.push(o); this.save(db); return o; }
   async getOrder(id) { return this.load().orders.find(o => o.id === id) || null; }
   async updateOrder(id, patch) { const db = this.load(); const o = db.orders.find(x => x.id === id); if (o) Object.assign(o, patch); this.save(db); return o; }
-  async insertEvent(e) { const db = this.load(); db.events.push(e); this.save(db); return e; }
+  async insertEvent(e) {
+    const db = this.load();
+    db.events.push(e);
+    db.counters_total = db.counters_total || [];
+    db.counters_daily = db.counters_daily || [];
+    let t = db.counters_total.find(x => x.campaign_id === e.campaign_id);
+    if (!t) { t = { campaign_id: e.campaign_id, tenant_id: e.tenant_id, zone_id: e.zone_id, imp: 0, click: 0 }; db.counters_total.push(t); }
+    const day = jstParts(e.ts).date;
+    let d = db.counters_daily.find(x => x.campaign_id === e.campaign_id && x.day === day);
+    if (!d) { d = { campaign_id: e.campaign_id, day, imp: 0, click: 0 }; db.counters_daily.push(d); }
+    if (e.kind === "imp") { t.imp++; d.imp++; } else if (e.kind === "click") { t.click++; d.click++; }
+    this.save(db);
+    return e;
+  }
   async listEvents() { return this.load().events; }
+  async listEventsInRange(startTs, endTs) { return this.load().events.filter(e => e.ts >= startTs && e.ts < endTs); }
+  async getImpCounts(campaignId, dateStr) {
+    const db = this.load();
+    const t = (db.counters_total || []).find(x => x.campaign_id === campaignId);
+    const d = (db.counters_daily || []).find(x => x.campaign_id === campaignId && x.day === dateStr);
+    return { total: t ? t.imp : 0, today: d ? d.imp : 0 };
+  }
+  async rebuildCounters() {
+    const db = this.load();
+    db.counters_total = [];
+    db.counters_daily = [];
+    for (const e of db.events) {
+      let t = db.counters_total.find(x => x.campaign_id === e.campaign_id);
+      if (!t) { t = { campaign_id: e.campaign_id, tenant_id: e.tenant_id, zone_id: e.zone_id, imp: 0, click: 0 }; db.counters_total.push(t); }
+      const day = jstParts(e.ts).date;
+      let d = db.counters_daily.find(x => x.campaign_id === e.campaign_id && x.day === day);
+      if (!d) { d = { campaign_id: e.campaign_id, day, imp: 0, click: 0 }; db.counters_daily.push(d); }
+      if (e.kind === "imp") { t.imp++; d.imp++; } else if (e.kind === "click") { t.click++; d.click++; }
+    }
+    this.save(db);
+    return db.counters_total.length;
+  }
   async getCount(campaignId, dateStr = null, partsFn) {
     let imp = 0;
     for (const e of this.load().events) {
