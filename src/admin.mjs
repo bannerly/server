@@ -2,6 +2,7 @@
 import { jstParts, today, progressOf, aggregateHour, hourKeyOf } from "./deliver.mjs";
 import { sendUsageReport, sendDailyCheckpoint, prevMonthOf } from "./report.mjs";
 import { effectivePlanRules, rulesSummary, assessFeasibility } from "./rules.mjs";
+import { licenseStatus } from "./license.mjs";
 
 export function esc(s) {
   return String(s ?? "").replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
@@ -349,10 +350,19 @@ export async function handleAdmin(req, url, repo, helpers, newId, env = {}) {
   }).join("");
   const planRows = plans.map(p => `<tr><td>${esc(p.name)}</td><td>${p.price_monthly.toLocaleString()}円</td><td>${p.goal_impressions}</td><td>${esc(rulesSummary(effectivePlanRules(p, {})))}</td><td>${esc(p.description || "")}</td></tr>`).join("");
   const sel = (items, val, label) => items.map(i => `<option value="${esc(i[val])}">${esc(i[label])}</option>`).join("");
+  const lic = await licenseStatus(env);
+  const licHtml = {
+    unset: `<p style="font-size:13px;color:#888;">ライセンス: 未設定（LICENSE_FILE が設定されていません）</p>`,
+    valid: `<p style="font-size:13px;">ライセンス: <strong>有効</strong> — ${esc(lic.payload.licensee || "")} / デプロイ ${esc(lic.payload.deployment_id || "")} / 期限 ${esc(lic.payload.expires_at || "")}（残り${lic.daysLeft}日）${lic.expiringSoon ? ' <span style="color:#b58900">※期限が近づいています</span>' : ""}${lic.deploymentMismatch ? ' <span style="color:#c00">※DEPLOYMENT_ID と一致しません</span>' : ""}</p>`,
+    expired: `<p style="font-size:13px;color:#c00;">ライセンス: <strong>期限切れ</strong> — ${esc(lic.payload.licensee || "")} / 期限 ${esc(lic.payload.expires_at || "")}（配信は継続中です。発行元へ更新を依頼してください）</p>`,
+    invalid: `<p style="font-size:13px;color:#c00;">ライセンス: <strong>検証失敗</strong> — ${esc(lic.reason || "")}（配信は継続中です）</p>`,
+    unverifiable: `<p style="font-size:13px;color:#b58900;">ライセンス: ファイルはありますが検証できません — ${esc(lic.reason || "")}</p>`,
+  }[lic.state] || "";
 
   return page("広告管理（本番構成）", `
     <h1>広告管理画面（本番構成）</h1>
     <p><a href="/demo">デモページ</a> / <a href="/admin/report">レポート</a> / <a href="/admin/monthly">月次レポート（広告主ごと）</a></p>
+    ${licHtml}
     <form method="post" action="/admin/publish" style="display:inline"><button>スナップショット再発行</button></form>
     <h2>審査キュー（${pending.length}件）</h2>${reviewHtml}
     <hr>${tenantHtml}

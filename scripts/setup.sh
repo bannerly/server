@@ -44,6 +44,15 @@ if [ -n "${STRIPE_WEBHOOK_SECRET:-}" ]; then
   printf '%s' "$STRIPE_WEBHOOK_SECRET" | $WR secret put STRIPE_WEBHOOK_SECRET
 fi
 
+if [ -n "${LICENSE_FILE_JSON:-}" ]; then
+  echo "==> ライセンスファイル（LICENSE_FILE）を設定します"
+  printf '%s' "$LICENSE_FILE_JSON" | $WR secret put LICENSE_FILE
+fi
+if [ -n "${LICENSE_PUBLIC_KEY_JWK:-}" ]; then
+  echo "==> ライセンス検証用の公開鍵（LICENSE_PUBLIC_KEY）を設定します"
+  printf '%s' "$LICENSE_PUBLIC_KEY_JWK" | $WR secret put LICENSE_PUBLIC_KEY
+fi
+
 echo "==> デプロイします"
 $WR deploy
 echo "完了。/admin が管理画面、/signup がテナント登録、/tenant がテナントコンソールです。"

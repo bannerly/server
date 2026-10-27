@@ -1,4 +1,5 @@
 data-prod.json
+license-private*.json
 *.log
 node_modules/
 .dev.vars

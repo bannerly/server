@@ -11,6 +11,8 @@ const env = {
   STRIPE_ACCOUNT_TYPE: process.env.STRIPE_ACCOUNT_TYPE || "standard",
   ALLOW_OPEN_SIGNUP: process.env.ALLOW_OPEN_SIGNUP || "",
   LICENSE_KEY: process.env.LICENSE_KEY || "",
+  LICENSE_FILE: process.env.LICENSE_FILE || "",
+  LICENSE_PUBLIC_KEY: process.env.LICENSE_PUBLIC_KEY || "",
   REPORT_ENDPOINT: process.env.REPORT_ENDPOINT || "",
   DEPLOYMENT_ID: process.env.DEPLOYMENT_ID || "",
   PLATFORM_FEE_BPS: process.env.PLATFORM_FEE_BPS || "0",

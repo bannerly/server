@@ -143,6 +143,15 @@ GET /ad/<zone-id>?format=json → 構造化レスポンス（creative / imp・cl
 
 環境変数: `LICENSE_KEY`（デプロイごとに発行）、`REPORT_ENDPOINT`、`DEPLOYMENT_ID`。
 
+## ライセンスファイル
+
+商用配布時のライセンスは、署名付きファイル（JSON）で発行します。署名は ECDSA P-256 / SHA-256 で、発行者（RE-X）が秘密鍵で署名し、各デプロイは公開鍵で検証します。
+
+- **発行（RE-X 側）**: `node scripts/gen-license-keys.mjs` で鍵ペアを生成（秘密鍵はリポジトリに絶対に入れない。`.gitignore` 済み）。`LICENSE_PRIVATE_KEY_FILE=<秘密鍵> node scripts/issue-license.mjs --licensee "会社名" --deployment dep-xxxx --days 365 --features core,line --out license.json` で発行。内容: ライセンシー、デプロイ ID、発行日、有効期限、付与機能（features）、レポート送信先
+- **配布先での設定**: 環境変数 `LICENSE_FILE`（ファイル内容そのもの）と `LICENSE_PUBLIC_KEY`（公開鍵 JWK）。setup.sh は `LICENSE_FILE_JSON` / `LICENSE_PUBLIC_KEY_JWK` があれば secret として設定します
+- **検証**: デプロイ側は管理画面に状態（未設定 / 有効 / 期限切れ / 検証失敗）を表示します。**無効・期限切れでも配信は止めません**（警告のみ）。受信側や手元の確認には `LICENSE_PUBLIC_KEY_FILE=<公開鍵> node scripts/verify-license.mjs license.json`
+- **利用量レポートとの関係**: レポートの `LICENSE_KEY`（HMAC）はデプロイごとの計量署名用で、本ライセンスファイルとは別物です。ライセンスの deployment_id と `DEPLOYMENT_ID` が食い違う場合は管理画面に警告が出ます
+
 ## 状態
 
 Phase 1（実用化）まで実装済みです。ローカル構成（JSON リポジトリ）での通し検証は完了しています。D1 構成はコード完成済みで、初回デプロイ時の動作確認を前提としています。決済連携（Stripe）と GAM 実連携は今後の段階です。
