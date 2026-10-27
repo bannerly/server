@@ -37,6 +37,17 @@ export function effectivePlanRules(plan = {}, order = {}) {
   };
 }
 
+// 枠の直近30日実績に対するプラン目標の実現可能性（販売・承認時の警告用）
+export function assessFeasibility(plan = {}, order = {}, zoneImp30d = 0) {
+  const goal = plan.goal_impressions || 0;
+  if (!goal) return { level: "none", capacity: 0, ratio: 0 };
+  if (!zoneImp30d) return { level: "unknown", capacity: 0, ratio: 0 };
+  const capacity = Math.floor((zoneImp30d / 30) * periodDays(order));
+  const ratio = capacity > 0 ? goal / capacity : Infinity;
+  const level = ratio > 1 ? "over" : ratio > 0.7 ? "tight" : "ok";
+  return { level, capacity, ratio };
+}
+
 export function rulesSummary(r) {
   return [
     `区分:${r.tier}`,

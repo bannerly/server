@@ -1,5 +1,5 @@
 // ローカル用リポジトリ（JSONファイル）。repo-d1.mjs と同一インターフェース。
-import { jstParts } from "./deliver.mjs";
+import { jstParts, hourKeyOf } from "./deliver.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -127,6 +127,23 @@ export class LocalRepo {
     const t = (db.counters_total || []).find(x => x.campaign_id === campaignId);
     const d = (db.counters_daily || []).find(x => x.campaign_id === campaignId && x.day === dateStr);
     return { total: t ? t.imp : 0, today: d ? d.imp : 0 };
+  }
+  async getZoneImpStats(zoneId, days = 30) {
+    const db = this.load();
+    const cutoff = hourKeyOf(Date.now() - days * 86400000);
+    return (db.stats_hourly || []).filter(r => r.zone_id === zoneId && r.hour >= cutoff).reduce((s, r) => s + (r.imp || 0), 0);
+  }
+  async getZoneHourlyShares(zoneId, days = 30) {
+    const db = this.load();
+    const cutoff = hourKeyOf(Date.now() - days * 86400000);
+    const byHour = new Array(24).fill(0);
+    for (const r of (db.stats_hourly || [])) {
+      if (r.zone_id !== zoneId || r.hour < cutoff) continue;
+      const hod = parseInt(String(r.hour).slice(11, 13), 10);
+      if (hod >= 0 && hod < 24) byHour[hod] += r.imp || 0;
+    }
+    const total = byHour.reduce((a, b) => a + b, 0);
+    return total > 0 ? byHour.map(v => v / total) : new Array(24).fill(1 / 24);
   }
   async rebuildCounters() {
     const db = this.load();

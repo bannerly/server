@@ -1,6 +1,6 @@
 // D1 用リポジトリ。repo-local.mjs と同一インターフェース（戻り値の形を揃える）。
 // 注意: このファイルはローカル環境では実行検証していない（初回は wrangler で要確認）。
-import { jstParts } from "./deliver.mjs";
+import { jstParts, hourKeyOf } from "./deliver.mjs";
 export function newId(prefix) {
   return `${prefix}-${Math.random().toString(16).slice(2, 10)}${Date.now().toString(16).slice(-4)}`;
 }
@@ -88,6 +88,19 @@ export class D1Repo {
     const t = await this.first("SELECT imp FROM counters_total WHERE campaign_id=?", campaignId);
     const d = await this.first("SELECT imp FROM counters_daily WHERE campaign_id=? AND day=?", campaignId, dateStr);
     return { total: t ? t.imp : 0, today: d ? d.imp : 0 };
+  }
+  async getZoneImpStats(zoneId, days = 30) {
+    const cutoff = hourKeyOf(Date.now() - days * 86400000);
+    const r = await this.first("SELECT COALESCE(SUM(imp),0) AS s FROM stats_hourly WHERE zone_id=? AND hour>=?", zoneId, cutoff);
+    return r ? r.s : 0;
+  }
+  async getZoneHourlyShares(zoneId, days = 30) {
+    const cutoff = hourKeyOf(Date.now() - days * 86400000);
+    const rows = await this.all("SELECT substr(hour,12,2) AS hod, COALESCE(SUM(imp),0) AS s FROM stats_hourly WHERE zone_id=? AND hour>=? GROUP BY hod", zoneId, cutoff);
+    const byHour = new Array(24).fill(0);
+    for (const r of rows) { const hod = parseInt(r.hod, 10); if (hod >= 0 && hod < 24) byHour[hod] = r.s; }
+    const total = byHour.reduce((a, b) => a + b, 0);
+    return total > 0 ? byHour.map(v => v / total) : new Array(24).fill(1 / 24);
   }
   async rebuildCounters() {
     const events = await this.listEvents();

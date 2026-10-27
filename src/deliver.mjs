@@ -37,6 +37,16 @@ function ruleMatch(c, ctx, counts) {
     if (!c.cities.map(r => String(r).toLowerCase()).includes(String(ctx.city).toLowerCase())) return false;
   }
   if (c.daily_cap > 0 && (counts.today || 0) >= c.daily_cap) return false;
+  // 時間帯ペーシング: 日次上限を枠の時間帯別トラフィック比で按分し、現時刻までの按分量を超えたら止める
+  if (c.daily_cap > 0 && Array.isArray(ctx.hourlyShares) && ctx.hourlyShares.length === 24) {
+    const totalShare = ctx.hourlyShares.reduce((a, b) => a + (b || 0), 0);
+    if (totalShare > 0) {
+      let cum = 0;
+      for (let h = 0; h <= Math.min(23, ctx.hour || 0); h++) cum += ctx.hourlyShares[h] || 0;
+      const allowed = Math.floor(c.daily_cap * (cum / totalShare));
+      if ((counts.today || 0) >= allowed) return false;
+    }
+  }
   if (c.type === "contract" && c.goal_impressions > 0 && (counts.total || 0) >= c.goal_impressions) return false;
   return true;
 }
@@ -59,6 +69,7 @@ function weightedPick(list) {
 export async function pickFromSnapshot(snapshot, ctx, countsFn) {
   const t = today();
   const sorted = [...snapshot.campaigns].sort((a, b) => PRIORITY[a.type] - PRIORITY[b.type]);
+  const rctx = { ...ctx, hourlyShares: snapshot.hourly_shares || null };
   const eligible = [];
   for (const c of sorted) {
     if (!c.active || c.starts_at > t || c.ends_at < t) continue;
@@ -66,7 +77,7 @@ export async function pickFromSnapshot(snapshot, ctx, countsFn) {
     if (!approved.length) continue;
     if (freqCountedOut(ctx.cookie, c)) continue;
     const counts = await countsFn(c);
-    if (!ruleMatch(c, ctx, counts)) continue;
+    if (!ruleMatch(c, rctx, counts)) continue;
     eligible.push({ campaign: c, banners: approved });
   }
   if (!eligible.length) return null;
@@ -84,7 +95,8 @@ export async function buildSnapshot(repo, zone) {
   for (const c of campaigns) {
     withBanners.push({ ...c, banners: await repo.listBannersByCampaign(c.id) });
   }
-  return { zone, campaigns: withBanners, built_at: Date.now() };
+  const hourly_shares = typeof repo.getZoneHourlyShares === "function" ? await repo.getZoneHourlyShares(zone.id) : null;
+  return { zone, campaigns: withBanners, hourly_shares, built_at: Date.now() };
 }
 
 export async function publishAllSnapshots(repo, putSnap) {
