@@ -119,6 +119,42 @@ export async function sendDailyCheckpoint(env, repo, day, { force = false } = {}
   return deliver(env, repo, await buildDailyCheckpoint(repo, day, env.DEPLOYMENT_ID || "unknown"));
 }
 
+// 未送信（未着）レポートの検出と一括再送。
+// REPORT_ENDPOINT 未設定なら「送る前提がない」ので対象外（applicable: false）。
+// 配信実績（カウンタ）がある期間について、送信済み（sent_at あり）のレポートが無いものを未着とする。
+const jstDayStr = ms => new Date(ms + 9 * 3600000).toISOString().slice(0, 10);
+export async function findMissedReports(env, repo, { dailyWindowDays = 14, nowMs = Date.now() } = {}) {
+  if (!env.REPORT_ENDPOINT) return { applicable: false, daily: [], monthly: [] };
+  const daily = [];
+  for (let i = dailyWindowDays; i >= 1; i--) {
+    const d = jstDayStr(nowMs - i * 86400000);
+    const rows = await repo.listCountersDaily(d, jstDayStr(nowMs - (i - 1) * 86400000));
+    if (!rows.some(r => r.imp || r.click)) continue;
+    const rec = await repo.getReport(d, "daily");
+    if (!rec || !rec.sent_at) daily.push(d);
+  }
+  const monthly = [];
+  let m = prevMonthOf(jstDayStr(nowMs));
+  for (let k = 0; k < 2; k++) {
+    const rows = await repo.listCountersDaily(`${m}-01`, `${m}-32`);
+    if (rows.some(r => r.imp || r.click)) {
+      const rec = await repo.getReport(m, "monthly");
+      if (!rec || !rec.sent_at) monthly.push(m);
+    }
+    m = prevMonthOf(`${m}-01`);
+  }
+  return { applicable: true, daily, monthly };
+}
+
+export async function sendMissedReports(env, repo) {
+  const missed = await findMissedReports(env, repo);
+  if (!missed.applicable) return { ...missed, sentDaily: [], sentMonthly: [] };
+  // 古い期間から順に送る（日次・月次とも連鎖がつながるように）
+  for (const d of missed.daily) await sendDailyCheckpoint(env, repo, d, { force: true });
+  for (const m of missed.monthly) await sendUsageReport(env, repo, m, { force: true });
+  return { ...missed, sentDaily: missed.daily, sentMonthly: missed.monthly };
+}
+
 // 受信側の検証: ハッシュ再計算 + 署名照合 + 前月との連鎖確認
 export async function verifyReport(report, licenseKey, prevReport) {
   const { hash, signature, ...core } = report;

@@ -5,7 +5,7 @@ import { D1Repo, newId as d1NewId } from "./repo-d1.mjs";
 import { jstParts, today, pickFromSnapshot, buildSnapshot, publishAllSnapshots, aggregateHour, hourKeyOf } from "./deliver.mjs";
 import { handleAdmin, esc } from "./admin.mjs";
 import { handleSignup, handleTenant } from "./tenant.mjs";
-import { sendUsageReport, sendDailyCheckpoint, prevMonthOf } from "./report.mjs";
+import { sendUsageReport, sendDailyCheckpoint, sendMissedReports, prevMonthOf } from "./report.mjs";
 import { verifyWebhook } from "./stripe.mjs";
 
 const GIF = new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0x01, 0x00, 0x01, 0x00, 0x80, 0x00, 0x00, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x21, 0xf9, 0x04, 0x01, 0x00, 0x00, 0x00, 0x00, 0x2c, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x02, 0x02, 0x44, 0x01, 0x00, 0x3b]);
@@ -220,6 +220,10 @@ export default {
     // 日次チェックポイント: 前日（JST）分を署名して送信（冪等）
     if (env.LICENSE_KEY || env.REPORT_ENDPOINT) {
       await sendDailyCheckpoint(env, repo, jstParts(Date.now() - 86400000).date);
+    }
+    // 未着分の自動補完: 送信先が設定されている場合、未送信のまま残った日次・月次を古い順に送る
+    if (env.REPORT_ENDPOINT) {
+      try { await sendMissedReports(env, repo); } catch { /* 送信先の障害時は次回 cron で再試行 */ }
     }
   },
 };

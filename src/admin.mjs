@@ -1,6 +1,6 @@
 // 管理画面（サーバー描画）。配信に効く変更のたびに helpers.publishZone を呼ぶ。
 import { jstParts, today, progressOf, aggregateHour, hourKeyOf } from "./deliver.mjs";
-import { sendUsageReport, sendDailyCheckpoint, prevMonthOf } from "./report.mjs";
+import { sendUsageReport, sendDailyCheckpoint, findMissedReports, sendMissedReports, prevMonthOf } from "./report.mjs";
 import { effectivePlanRules, rulesSummary, assessFeasibility } from "./rules.mjs";
 import { licenseStatus } from "./license.mjs";
 
@@ -149,6 +149,16 @@ export async function handleAdmin(req, url, repo, helpers, newId, env = {}) {
           ハッシュ: <code>${esc(report.hash)}</code><br>
           送信: ${sent ? "済み" : (env.REPORT_ENDPOINT ? "未送信" : "送信先未設定（ローカル保存のみ）")}${reused ? "（既存チェックポイントを再表示）" : ""}</p>
           <p><a href="/admin/report">レポートへ戻る</a></p>`);
+      } catch (e) { return new Response(`送信エラー: ${esc(e.message)}`, { status: 502 }); }
+    }
+    if (sub === "send-missed") {
+      try {
+        const r = await sendMissedReports(env, repo);
+        return page("未送信レポートの一括送信", `
+          <h2>未送信レポートの一括送信</h2>
+          <p>日次: ${r.sentDaily.length}件（${r.sentDaily.map(esc).join(", ") || "なし"}）<br>
+          月次: ${r.sentMonthly.length}件（${r.sentMonthly.map(esc).join(", ") || "なし"}）</p>
+          <p><a href="/admin">管理画面へ戻る</a></p>`);
       } catch (e) { return new Response(`送信エラー: ${esc(e.message)}`, { status: 502 }); }
     }
     if (sub === "rebuild-counters") {
@@ -358,11 +368,21 @@ export async function handleAdmin(req, url, repo, helpers, newId, env = {}) {
     invalid: `<p style="font-size:13px;color:#c00;">ライセンス: <strong>検証失敗</strong> — ${esc(lic.reason || "")}（配信は継続中です）</p>`,
     unverifiable: `<p style="font-size:13px;color:#b58900;">ライセンス: ファイルはありますが検証できません — ${esc(lic.reason || "")}</p>`,
   }[lic.state] || "";
+  const missed = await findMissedReports(env, repo).catch(() => ({ applicable: false, daily: [], monthly: [] }));
+  const missedHtml = missed.applicable && (missed.daily.length || missed.monthly.length)
+    ? `<div style="border:1px solid #c00;padding:8px 12px;margin:8px 0;font-size:13px;">
+        <strong style="color:#c00;">未送信の利用量レポートがあります</strong>
+        ${missed.daily.length ? `<br>日次チェックポイント: ${missed.daily.map(esc).join(", ")}` : ""}
+        ${missed.monthly.length ? `<br>月次レポート: ${missed.monthly.map(esc).join(", ")}` : ""}
+        <form method="post" action="/admin/send-missed" style="margin-top:6px;"><button>未送信分をまとめて送信する</button></form>
+      </div>`
+    : "";
 
   return page("広告管理（本番構成）", `
     <h1>広告管理画面（本番構成）</h1>
     <p><a href="/demo">デモページ</a> / <a href="/admin/report">レポート</a> / <a href="/admin/monthly">月次レポート（広告主ごと）</a></p>
     ${licHtml}
+    ${missedHtml}
     <form method="post" action="/admin/publish" style="display:inline"><button>スナップショット再発行</button></form>
     <h2>審査キュー（${pending.length}件）</h2>${reviewHtml}
     <hr>${tenantHtml}
