@@ -71,7 +71,7 @@ export async function createOrderCheckout(env, tenant, order, plan, advertiser) 
     mode: "payment",
     success_url: `${cfg.baseUrl}/tenant?paid=1`,
     cancel_url: `${cfg.baseUrl}/tenant?paid=0`,
-    line_items: [{ quantity: 1, price_data: { currency: "jpy", unit_amount: amount, product_data: { name: `Slotly ${plan.name}（月額）` } } }],
+    line_items: [{ quantity: 1, price_data: { currency: "jpy", unit_amount: amount, product_data: { name: `bannerly ${plan.name}（月額）` } } }],
     payment_intent_data: { application_fee_amount: applicationFee(amount, cfg.feeBps) || undefined },
     metadata: { order_id: order.id, tenant_id: tenant.id },
   }, tenant.stripe_account_id);
@@ -89,7 +89,7 @@ export async function sendOrderInvoice(env, tenant, order, plan, advertiser) {
   }, acct);
   await stripeReq(env, "/v1/invoiceitems", {
     customer: customer.id, amount: plan.price_monthly, currency: "jpy",
-    description: `Slotly ${plan.name}（月額） ${order.starts_at}〜${order.ends_at}`,
+    description: `bannerly ${plan.name}（月額） ${order.starts_at}〜${order.ends_at}`,
   }, acct);
   const cfg = stripeConfig(env);
   const invoice = await stripeReq(env, "/v1/invoices", {

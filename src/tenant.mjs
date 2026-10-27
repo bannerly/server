@@ -28,7 +28,7 @@ const redirect = loc => new Response(null, { status: 303, headers: { location: l
 export async function handleSignup(req, url, repo, newId) {
   if (req.method === "GET") {
     return page("テナント登録", `
-      <h1>Slotly テナント登録</h1>
+      <h1>bannerly テナント登録</h1>
       <p>登録すると、あなたの広告枠を管理するテナントと管理トークンが発行されます。</p>
       <form method="post" action="/signup" style="display:grid;gap:8px;max-width:480px;">
         <label>テナント名（会社・サービス名） <input name="name" required style="width:100%"></label>

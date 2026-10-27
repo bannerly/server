@@ -1,4 +1,4 @@
--- Slotly D1 スキーマ
+-- bannerly D1 スキーマ
 CREATE TABLE IF NOT EXISTS tenants (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,

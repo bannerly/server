@@ -1,5 +1,5 @@
 // RE-X 自社利用のための初期投入スクリプト。
-// デプロイ済みの Slotly に対して、公開インターフェース（/signup と /tenant）だけを使って
+// デプロイ済みの bannerly に対して、公開インターフェース（/signup と /tenant）だけを使って
 // テナント「re-x」と初期ゾーンを作成する。
 // 使い方: node scripts/seed-rex.mjs --base https://<your-domain> [--email kaz@re-x.info]
 // 実行すると管理トークンが表示される（この画面でしか取得できないので必ず保存すること）。

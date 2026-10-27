@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Slotly 初回セットアップ: Cloudflare リソース（D1 / KV / Queue）を作成し、
+# bannerly 初回セットアップ: Cloudflare リソース（D1 / KV / Queue）を作成し、
 # wrangler.toml へ ID を反映、スキーマ適用、管理トークン設定、初回デプロイまでを行う。
 # 前提: `npx wrangler login` 済みであること。冪等ではないので、初回のみ実行する。
 set -euo pipefail
@@ -10,7 +10,7 @@ WR="npx wrangler"
 
 echo "==> D1 データベースを作成します"
 $WR d1 create bannerly || true
-DB_ID=$($WR d1 list --json 2>/dev/null | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const a=JSON.parse(s);const db=a.find(x=>x.name==='slotly');console.log(db?db.uuid:'')})")
+DB_ID=$($WR d1 list --json 2>/dev/null | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const a=JSON.parse(s);const db=a.find(x=>x.name==='bannerly');console.log(db?db.uuid:'')})")
 [ -n "$DB_ID" ] || { echo "D1 の ID を取得できませんでした。wrangler.toml を手動で確認してください"; exit 1; }
 
 echo "==> KV 名前空間を作成します"

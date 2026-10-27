@@ -1,1 +1,1 @@
-{"description":"Lightweight multi-tenant ad server for startups (Cloudflare Workers / D1 / KV / Queues)","engines":{"node":">=18"},"license":"MIT","name":"slotly","scripts":{"dev":"node server.mjs"},"type":"module","version":"0.1.0"}
+{"description":"Lightweight multi-tenant ad server for startups (Cloudflare Workers / D1 / KV / Queues)","engines":{"node":">=18"},"license":"MIT","name":"bannerly","scripts":{"dev":"node server.mjs"},"type":"module","version":"0.1.0"}
