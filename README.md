@@ -14,6 +14,9 @@
 - **レポート** — 期間指定レポート（CSV 対応）と、広告主ごとの月次レポート（総表示回数 / キャンペーン別内訳 / 日別）
 - **アプリ SDK** — Expo / React Native 用コンポーネントを別リポジトリ（slotly-sdk）で提供
 - **バックフィル** — 枠ごとに外部タグを設定でき、直接販売のない枠・時間帯を埋められます
+- **セルフテナント登録** — `/signup` からテナントが自分で登録でき、テナント専用コンソール（`/tenant`）で自テナントだけを管理できます
+- **Stripe Connect（Direct charges）** — テナントは自分の Stripe アカウントを接続し、広告主への課金を自社アカウントで直接受けられます。Checkout 支払いリンクと、Stripe から送られる請求書（インボイス）に対応します。プラットフォームは資金を預かりません（手数料は application fee として設定可能）
+- **デプロイ自動化** — 初回セットアップスクリプトと GitHub Actions による自動デプロイを用意しています
 
 ## クイックスタート（ローカル）
 
@@ -30,7 +33,30 @@ node server.mjs
 
 ローカルではデータは `data-prod.json`（自動生成、git 管理外）に保存されます。管理画面にトークン認証を付ける場合は `ADMIN_TOKEN=<任意の文字列> node server.mjs` とし、リクエストヘッダ `x-admin-token` で認証します。
 
+## テナント登録とコンソール
+
+- テナント登録: `/signup`（テナント名・テナントID・担当者メールを入力すると、管理トークンが発行されます）
+- テナントコンソール: `/tenant`（管理トークンで認証。自テナントの枠・広告主・申込・Stripe 接続のみ操作できます）
+- 運営側の管理画面: `/admin`（全テナント横断。従来どおり）
+
+## Stripe Connect（Direct charges）と請求書
+
+1. テナントがコンソールの「Stripe を接続する」から Connect オンボーディングを完了します
+2. 申込に対して、テナントは次のどちらかで請求できます
+   - **支払いリンク（Checkout）** — テナントの接続アカウント上での Direct charge。支払われると申込の支払い状態が自動で `paid` になります
+   - **請求書を送る** — 接続アカウント名義の Stripe 請求書を作成し、Stripe が広告主へメール送信します（ホスト請求書ページの URL も申込に残ります）
+3. 必要な環境変数: `STRIPE_SECRET_KEY`、`STRIPE_WEBHOOK_SECRET`、`PUBLIC_BASE_URL`、任意で `PLATFORM_FEE_BPS`（プラットフォーム手数料、100 = 1%。application fee として差し引かれます）
+4. Webhook エンドポイント `https://<your-domain>/stripe/webhook` に `checkout.session.completed` / `invoice.paid` / `invoice.payment_failed` / `account.updated` を登録してください
+
 ## Cloudflare へのデプロイ
+
+初回はセットアップスクリプトが、リソース作成から初回デプロイまでを行います（`npx wrangler login` 済みが前提です）。
+
+```sh
+bash scripts/setup.sh
+```
+
+以降は GitHub Actions（`.github/workflows/deploy.yml`）が `main` への push で自動デプロイします。リポジトリの Secrets に `CLOUDFLARE_API_TOKEN` と `CLOUDFLARE_ACCOUNT_ID` を登録してください。手動で進める場合は次の手順です。
 
 1. D1 データベース、KV 名前空間、Queues を作成し、`wrangler.toml` の ID を差し替えます
    ```sh

@@ -15,7 +15,17 @@ export class D1Repo {
   async run(sql, ...binds) { return await this.db.prepare(sql).bind(...binds).run(); }
 
   async listTenants() { return this.all("SELECT * FROM tenants ORDER BY created_at"); }
-  async createTenant(t) { await this.run("INSERT INTO tenants (id,name,created_at) VALUES (?,?,?)", t.id, t.name, t.created_at); return t; }
+  async createTenant(t) { await this.run("INSERT INTO tenants (id,name,stripe_account_id,stripe_charges_enabled,created_at) VALUES (?,?,?,?,?)", t.id, t.name, t.stripe_account_id || "", t.stripe_charges_enabled ? 1 : 0, t.created_at); return t; }
+  async getTenant(id) { return this.first("SELECT * FROM tenants WHERE id=?", id); }
+  async updateTenant(id, patch) {
+    const cur = await this.getTenant(id); if (!cur) return null;
+    const n = { ...cur, ...patch };
+    await this.run("UPDATE tenants SET name=?, stripe_account_id=?, stripe_charges_enabled=? WHERE id=?", n.name, n.stripe_account_id || "", n.stripe_charges_enabled ? 1 : 0, id);
+    return n;
+  }
+  async createUser(u) { await this.run("INSERT INTO users (id,tenant_id,email,role,token_hash,created_at) VALUES (?,?,?,?,?,?)", u.id, u.tenant_id || null, u.email, u.role || "tenant_admin", u.token_hash || "", u.created_at); return u; }
+  async listUsers() { return this.all("SELECT * FROM users ORDER BY created_at"); }
+  async getUserByTokenHash(hash) { return this.first("SELECT * FROM users WHERE token_hash=?", hash); }
   async listZones() { return this.all("SELECT * FROM zones ORDER BY created_at"); }
   async getZone(id) { return mapZone(await this.first("SELECT * FROM zones WHERE id=?", id)); }
   async createZone(z) { await this.run("INSERT INTO zones (id,tenant_id,name,width,height,backfill_html,created_at) VALUES (?,?,?,?,?,?,?)", z.id, z.tenant_id, z.name, z.width, z.height, z.backfill_html, z.created_at); return z; }
@@ -50,12 +60,12 @@ export class D1Repo {
   async createPlan(p) { await this.run("INSERT INTO plans (id,name,price_monthly,goal_impressions,description) VALUES (?,?,?,?,?)", p.id, p.name, p.price_monthly, p.goal_impressions || 0, p.description || ""); return p; }
   async getPlan(id) { return this.first("SELECT * FROM plans WHERE id=?", id); }
   async listOrders() { return this.all("SELECT * FROM orders ORDER BY created_at"); }
-  async createOrder(o) { await this.run("INSERT INTO orders (id,tenant_id,advertiser_id,plan_id,zone_id,starts_at,ends_at,status,campaign_id,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)", o.id, o.tenant_id, o.advertiser_id, o.plan_id, o.zone_id, o.starts_at, o.ends_at, o.status || "applied", o.campaign_id || null, o.created_at); return o; }
+  async createOrder(o) { await this.run("INSERT INTO orders (id,tenant_id,advertiser_id,plan_id,zone_id,starts_at,ends_at,status,campaign_id,payment_status,stripe_session_id,stripe_invoice_id,stripe_invoice_url,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)", o.id, o.tenant_id, o.advertiser_id, o.plan_id, o.zone_id, o.starts_at, o.ends_at, o.status || "applied", o.campaign_id || null, o.payment_status || "unpaid", o.stripe_session_id || "", o.stripe_invoice_id || "", o.stripe_invoice_url || "", o.created_at); return o; }
   async getOrder(id) { return this.first("SELECT * FROM orders WHERE id=?", id); }
   async updateOrder(id, patch) {
     const cur = await this.getOrder(id); if (!cur) return null;
     const n = { ...cur, ...patch };
-    await this.run("UPDATE orders SET status=?, campaign_id=? WHERE id=?", n.status, n.campaign_id || null, id);
+    await this.run("UPDATE orders SET status=?, campaign_id=?, payment_status=?, stripe_session_id=?, stripe_invoice_id=?, stripe_invoice_url=? WHERE id=?", n.status, n.campaign_id || null, n.payment_status || "unpaid", n.stripe_session_id || "", n.stripe_invoice_id || "", n.stripe_invoice_url || "", id);
     return n;
   }
   async insertEvent(e) { await this.run("INSERT INTO events_raw (id,ts,kind,tenant_id,zone_id,campaign_id,banner_id) VALUES (?,?,?,?,?,?,?)", e.id, e.ts, e.kind, e.tenant_id, e.zone_id, e.campaign_id, e.banner_id); return e; }

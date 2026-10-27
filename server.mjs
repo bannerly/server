@@ -4,7 +4,13 @@
 import http from "node:http";
 import worker from "./src/worker.mjs";
 
-const env = { ADMIN_TOKEN: process.env.ADMIN_TOKEN || null };
+const env = {
+  ADMIN_TOKEN: process.env.ADMIN_TOKEN || null,
+  STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY || "",
+  STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET || "",
+  PLATFORM_FEE_BPS: process.env.PLATFORM_FEE_BPS || "0",
+  PUBLIC_BASE_URL: process.env.PUBLIC_BASE_URL || "http://localhost:8788",
+};
 const server = http.createServer(async (req, res) => {
   try {
     const url = `http://localhost${req.url}`;

@@ -284,7 +284,7 @@ export async function handleAdmin(req, url, repo, helpers, newId) {
         <table border="1" cellspacing="0" cellpadding="6" style="border-collapse:collapse;font-size:14px;">
         <tr><th>キャンペーン</th><th>広告主</th><th>種別</th><th>状態</th><th>期間</th><th>ルール</th><th>目標</th><th>バナー</th><th></th></tr>${rowsHtml}</table>`;
     }).join("");
-    return `<h2>テナント: ${esc(t.name)}（${esc(t.id)}）</h2>${zoneHtml || "<p>枠がありません。</p>"}`;
+    return `<h2>テナント: ${esc(t.name)}（${esc(t.id)}）</h2><p style="font-size:13px;color:#555;">Stripe: ${t.stripe_account_id ? `接続済み（${esc(t.stripe_account_id)} / 課金 ${t.stripe_charges_enabled ? "有効" : "確認中"})` : "未接続（テナントコンソールから接続）"}</p>${zoneHtml || "<p>枠がありません。</p>"}`;
   }).join("<hr>");
 
   const orderRows = orders.map(o => {
@@ -293,7 +293,7 @@ export async function handleAdmin(req, url, repo, helpers, newId) {
     const act = o.status === "applied"
       ? `<form method="post" action="/admin/orders/${o.id}/approve" style="display:inline"><button>承認してキャンペーン化</button></form>
          <form method="post" action="/admin/orders/${o.id}/reject" style="display:inline"><button>却下</button></form>` : "";
-    return `<tr><td>${esc(adv ? adv.name : o.advertiser_id)}</td><td>${esc(plan ? `${plan.name}（月${plan.price_monthly.toLocaleString()}円）` : o.plan_id)}</td><td>${esc(o.zone_id)}</td><td>${o.starts_at}〜${o.ends_at}</td><td>${esc(o.status)}</td><td>${esc(o.campaign_id || "—")}</td><td>${act}</td></tr>`;
+    return `<tr><td>${esc(adv ? adv.name : o.advertiser_id)}</td><td>${esc(plan ? `${plan.name}（月${plan.price_monthly.toLocaleString()}円）` : o.plan_id)}</td><td>${esc(o.zone_id)}</td><td>${o.starts_at}〜${o.ends_at}</td><td>${esc(o.status)}</td><td>${esc(o.payment_status || "unpaid")}</td><td>${esc(o.campaign_id || "—")}</td><td>${act}</td></tr>`;
   }).join("");
   const planRows = plans.map(p => `<tr><td>${esc(p.name)}</td><td>${p.price_monthly.toLocaleString()}円</td><td>${p.goal_impressions}</td><td>${esc(p.description || "")}</td></tr>`).join("");
   const sel = (items, val, label) => items.map(i => `<option value="${esc(i[val])}">${esc(i[label])}</option>`).join("");
@@ -306,7 +306,7 @@ export async function handleAdmin(req, url, repo, helpers, newId) {
     <hr>${tenantHtml}
     <hr><h2>申込（orders）</h2>
     <table border="1" cellspacing="0" cellpadding="6" style="border-collapse:collapse;font-size:14px;">
-    <tr><th>広告主</th><th>プラン</th><th>枠</th><th>期間</th><th>状態</th><th>キャンペーン</th><th></th></tr>${orderRows || '<tr><td colspan="7">申込なし</td></tr>'}</table>
+    <tr><th>広告主</th><th>プラン</th><th>枠</th><th>期間</th><th>状態</th><th>支払い</th><th>キャンペーン</th><th></th></tr>${orderRows || '<tr><td colspan="8">申込なし</td></tr>'}</table>
     <h2>プラン</h2>
     <table border="1" cellspacing="0" cellpadding="6" style="border-collapse:collapse;font-size:14px;">
     <tr><th>名前</th><th>月額</th><th>目標imp</th><th>説明</th></tr>${planRows}</table>

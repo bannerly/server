@@ -4,6 +4,8 @@ import { LocalRepo, newId as localNewId } from "./repo-local.mjs";
 import { D1Repo, newId as d1NewId } from "./repo-d1.mjs";
 import { jstParts, today, pickFromSnapshot, buildSnapshot, publishAllSnapshots, aggregateHour, hourKeyOf } from "./deliver.mjs";
 import { handleAdmin, esc } from "./admin.mjs";
+import { handleSignup, handleTenant } from "./tenant.mjs";
+import { verifyWebhook } from "./stripe.mjs";
 
 const GIF = new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0x01, 0x00, 0x01, 0x00, 0x80, 0x00, 0x00, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x21, 0xf9, 0x04, 0x01, 0x00, 0x00, 0x00, 0x00, 0x2c, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x02, 0x02, 0x44, 0x01, 0x00, 0x3b]);
 let localRepo = null;
@@ -134,6 +136,39 @@ export default {
       return new Response(null, { status: 302, headers: { location: dest } });
     }
 
+    if (url.pathname === "/signup") return handleSignup(req, url, repo, newId);
+
+    if (parts[0] === "tenant") {
+      const snap = snapStore(env, repo);
+      const helpers = {
+        publishZone: async zoneId => { const z = await repo.getZone(zoneId); if (z) await snap.put(zoneId, await buildSnapshot(repo, z)); },
+        publishAll: async () => { await publishAllSnapshots(repo, (zid, s) => snap.put(zid, s)); },
+      };
+      return handleTenant(req, url, repo, helpers, newId, env);
+    }
+
+    if (url.pathname === "/stripe/webhook" && req.method === "POST") {
+      const raw = await req.text();
+      if (!(await verifyWebhook(env, raw, req.headers.get("stripe-signature")))) {
+        return new Response("invalid signature", { status: 400 });
+      }
+      const event = JSON.parse(raw);
+      const obj = event.data?.object || {};
+      const orderId = obj.metadata?.order_id;
+      if (event.type === "checkout.session.completed" && orderId) {
+        await repo.updateOrder(orderId, { payment_status: "paid", stripe_session_id: obj.id });
+      } else if (event.type === "invoice.paid" && orderId) {
+        await repo.updateOrder(orderId, { payment_status: "paid", stripe_invoice_id: obj.id, stripe_invoice_url: obj.hosted_invoice_url || "" });
+      } else if (event.type === "invoice.payment_failed" && orderId) {
+        await repo.updateOrder(orderId, { payment_status: "payment_failed" });
+      } else if (event.type === "account.updated" && obj.id) {
+        const tenants = await repo.listTenants();
+        const t = tenants.find(x => x.stripe_account_id === obj.id);
+        if (t) await repo.updateTenant(t.id, { stripe_charges_enabled: obj.charges_enabled ? 1 : 0 });
+      }
+      return Response.json({ received: true });
+    }
+
     if (url.pathname === "/demo") {
       return new Response(`<!doctype html><meta charset="utf-8"><title>デモ</title><body style="font-family:sans-serif;max-width:960px;margin:24px auto;padding:0 16px;">
         <h1>デモ: ポータルページ（テナント: デモポータル）</h1><iframe src="/ad/portal-top" width="760" height="130" style="border:0;"></iframe>
@@ -156,7 +191,7 @@ export default {
 
     if (url.pathname === "/") {
       return new Response(`<!doctype html><meta charset="utf-8"><title>ad-platform</title><body style="font-family:sans-serif;max-width:960px;margin:24px auto;padding:0 16px;">
-        <h1>広告基盤（本番構成）</h1><p><a href="/demo">デモ</a> / <a href="/admin">管理画面</a> / <a href="/admin/report">レポート</a></p></body>`,
+        <h1>広告基盤（本番構成）</h1><p><a href="/demo">デモ</a> / <a href="/admin">管理画面</a> / <a href="/admin/report">レポート</a> / <a href="/signup">テナント登録</a> / <a href="/tenant">テナントコンソール</a></p></body>`,
         { headers: { "content-type": "text/html; charset=utf-8" } });
     }
     return new Response("not found", { status: 404 });

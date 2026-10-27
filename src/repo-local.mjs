@@ -74,6 +74,11 @@ export class LocalRepo {
 
   async listTenants() { return this.load().tenants; }
   async createTenant(t) { const db = this.load(); db.tenants.push(t); this.save(db); return t; }
+  async getTenant(id) { return this.load().tenants.find(t => t.id === id) || null; }
+  async updateTenant(id, patch) { const db = this.load(); const t = db.tenants.find(x => x.id === id); if (t) Object.assign(t, patch); this.save(db); return t; }
+  async createUser(u) { const db = this.load(); db.users.push(u); this.save(db); return u; }
+  async listUsers() { return this.load().users; }
+  async getUserByTokenHash(hash) { return this.load().users.find(u => u.token_hash && u.token_hash === hash) || null; }
   async listZones() { return this.load().zones; }
   async getZone(id) { return this.load().zones.find(z => z.id === id) || null; }
   async createZone(z) { const db = this.load(); db.zones.push(z); this.save(db); return z; }

@@ -2,6 +2,8 @@
 CREATE TABLE IF NOT EXISTS tenants (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
+  stripe_account_id TEXT NOT NULL DEFAULT '',
+  stripe_charges_enabled INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS users (
@@ -9,6 +11,7 @@ CREATE TABLE IF NOT EXISTS users (
   tenant_id TEXT,
   email TEXT NOT NULL,
   role TEXT NOT NULL DEFAULT 'tenant_admin',
+  token_hash TEXT NOT NULL DEFAULT '',
   created_at INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS zones (
@@ -80,6 +83,10 @@ CREATE TABLE IF NOT EXISTS orders (
   ends_at TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'applied',
   campaign_id TEXT,
+  payment_status TEXT NOT NULL DEFAULT 'unpaid',
+  stripe_session_id TEXT NOT NULL DEFAULT '',
+  stripe_invoice_id TEXT NOT NULL DEFAULT '',
+  stripe_invoice_url TEXT NOT NULL DEFAULT '',
   created_at INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS events_raw (
