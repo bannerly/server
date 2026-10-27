@@ -41,12 +41,20 @@ node server.mjs
 
 ## Stripe Connect（Direct charges）と請求書
 
-1. テナントがコンソールの「Stripe を接続する」から Connect オンボーディングを完了します
+1. テナントがコンソールの「Stripe を接続する」から Connect オンボーディングを完了します。アカウント種別は `STRIPE_ACCOUNT_TYPE`（既定 `standard` / `express`）。`standard` はテナント自身の Stripe アカウントをそのまま使う形で、請求書の名義・適格請求書の登録番号・振込先はアカウント側の設定が効きます
 2. 申込に対して、テナントは次のどちらかで請求できます
    - **支払いリンク（Checkout）** — テナントの接続アカウント上での Direct charge。支払われると申込の支払い状態が自動で `paid` になります
    - **請求書を送る** — 接続アカウント名義の Stripe 請求書を作成し、Stripe が広告主へメール送信します（ホスト請求書ページの URL も申込に残ります）
 3. 必要な環境変数: `STRIPE_SECRET_KEY`、`STRIPE_WEBHOOK_SECRET`、`PUBLIC_BASE_URL`、任意で `PLATFORM_FEE_BPS`（プラットフォーム手数料、100 = 1%。application fee として差し引かれます）
 4. Webhook エンドポイント `https://<your-domain>/stripe/webhook` に `checkout.session.completed` / `invoice.paid` / `invoice.payment_failed` / `account.updated` を登録してください
+
+## 自社利用の初期投入
+
+デプロイ直後に `scripts/seed-rex.mjs` を実行すると、運用者自身のテナントと初期ゾーンを公開インターフェース経由で作成できます（管理トークンが表示されるので保存してください）。
+
+```sh
+node scripts/seed-rex.mjs --base https://<your-domain>
+```
 
 ## Cloudflare へのデプロイ
 

@@ -40,15 +40,18 @@ export async function stripeReq(env, path, params = {}, connectedAccount = null)
   return data;
 }
 
-// テナントの Connect アカウント作成（Express）+ オンボーディングリンク発行
+// テナントの Connect アカウント作成 + オンボーディングリンク発行
+// 種別は STRIPE_ACCOUNT_TYPE（standard | express、既定 standard）。
+// standard はテナント自身の Stripe アカウントをそのまま使う形で、請求書の名義・
+// 適格請求書の登録番号・振込先などはアカウント側の設定がそのまま効く。
 export async function createConnectAccount(env, tenant, email) {
-  const acct = await stripeReq(env, "/v1/accounts", {
-    type: "express", email: email || undefined, country: "JP",
-    capabilities: { card_payments: { requested: true }, transfers: { requested: true } },
-    business_type: "company",
-    metadata: { tenant_id: tenant.id },
-  });
-  return acct;
+  const type = (env.STRIPE_ACCOUNT_TYPE || "standard").toLowerCase() === "express" ? "express" : "standard";
+  const params = { type, email: email || undefined, country: "JP", metadata: { tenant_id: tenant.id } };
+  if (type === "express") {
+    params.capabilities = { card_payments: { requested: true }, transfers: { requested: true } };
+    params.business_type = "company";
+  }
+  return stripeReq(env, "/v1/accounts", params);
 }
 export async function createAccountLink(env, accountId) {
   const cfg = stripeConfig(env);
