@@ -8,6 +8,7 @@ import { handleSignup, handleTenant } from "./tenant.mjs";
 import { sendUsageReport, sendDailyCheckpoint, sendMissedReports, prevMonthOf } from "./report.mjs";
 import { verifyWebhook } from "./stripe.mjs";
 import { verifyLineSignature, recordLineWebhookEvents, recordLineOpen, withLineAttribution } from "./line.mjs";
+import { ingestLineWebhookMessages } from "./line-routing.mjs";
 
 const GIF = new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0x01, 0x00, 0x01, 0x00, 0x80, 0x00, 0x00, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x21, 0xf9, 0x04, 0x01, 0x00, 0x00, 0x00, 0x00, 0x2c, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x02, 0x02, 0x44, 0x01, 0x00, 0x3b]);
 let localRepo = null;
@@ -151,6 +152,8 @@ export default {
       try { body = JSON.parse(raw); } catch { return new Response("bad json", { status: 400 }); }
       const emitRepo = { insertEvent: ev => emitEvent(env, repo, ev), getCampaign: id => repo.getCampaign(id) };
       await recordLineWebhookEvents(emitRepo, tenant, body, newId);
+      // 受信箱: テキスト等のメッセージはスレッドへ取り込み、ルールで担当キューへ割り当てる
+      await ingestLineWebhookMessages(repo, tenant, body, newId);
       return Response.json({ received: true });
     }
     // LIFF 到達ビーコン（ポータル画面が開かれた実到達をコンバージョンとして記録）
@@ -158,6 +161,10 @@ export default {
       if (!isBot(req)) {
         const emitRepo = { insertEvent: ev => emitEvent(env, repo, ev), getCampaign: id => repo.getCampaign(id) };
         const ev = await recordLineOpen(emitRepo, url.searchParams.get("c") || "", newId).catch(() => null);
+        // LIFF がチャネル単位の仮名ユーザー ID（u）を渡した場合、そのユーザーの帰属として控える
+        // （以降のメッセージを担当キューへ振り分ける際の帰属キャンペーンになる）
+        const uid = url.searchParams.get("u");
+        if (ev && uid) await repo.setLineAttribution(ev.tenant_id, uid, ev.campaign_id).catch(() => {});
         if (url.searchParams.get("format") === "json") return Response.json({ recorded: !!ev });
       }
       return new Response(GIF, { headers: { "content-type": "image/gif", "cache-control": "no-store" } });

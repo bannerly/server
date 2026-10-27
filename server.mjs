@@ -17,6 +17,7 @@ const env = {
   DEPLOYMENT_ID: process.env.DEPLOYMENT_ID || "",
   PLATFORM_FEE_BPS: process.env.PLATFORM_FEE_BPS || "0",
   PUBLIC_BASE_URL: process.env.PUBLIC_BASE_URL || "http://localhost:8788",
+  LINE_API_BASE_URL: process.env.LINE_API_BASE_URL || "",
 };
 const server = http.createServer(async (req, res) => {
   try {

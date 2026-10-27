@@ -143,6 +143,62 @@ CREATE TABLE IF NOT EXISTS stats_hourly (
   click INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (hour, campaign_id)
 );
+-- LINE メッセージルーティング / 統合受信箱（設計: LINE計測設計.md）
+-- 保存は必要最小限: チャネル単位の仮名ユーザーID、テキスト本文（受信箱表示と返信に必要な範囲）、割当て結果のみ。
+-- プロフィール情報（表示名・アイコン等）は取得・保存しない。
+CREATE TABLE IF NOT EXISTS line_queues (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  advertiser_id TEXT NOT NULL DEFAULT '',
+  area TEXT NOT NULL DEFAULT '',
+  available INTEGER NOT NULL DEFAULT 1,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_line_queues_tenant ON line_queues(tenant_id);
+CREATE TABLE IF NOT EXISTS line_route_rules (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  queue_id TEXT NOT NULL,
+  priority INTEGER NOT NULL DEFAULT 100,
+  campaign_id TEXT NOT NULL DEFAULT '',
+  area TEXT NOT NULL DEFAULT '',
+  hours TEXT NOT NULL DEFAULT '',
+  keywords TEXT NOT NULL DEFAULT '',
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_line_rules_tenant ON line_route_rules(tenant_id);
+CREATE TABLE IF NOT EXISTS line_threads (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  line_user_id TEXT NOT NULL,
+  queue_id TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'open',
+  campaign_id TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  UNIQUE (tenant_id, line_user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_line_threads_tenant ON line_threads(tenant_id, updated_at);
+CREATE TABLE IF NOT EXISTS line_messages (
+  id TEXT PRIMARY KEY,
+  thread_id TEXT NOT NULL,
+  tenant_id TEXT NOT NULL,
+  direction TEXT NOT NULL DEFAULT 'in',
+  msg_type TEXT NOT NULL DEFAULT 'text',
+  body TEXT NOT NULL DEFAULT '',
+  ts INTEGER NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_line_messages_thread ON line_messages(thread_id, ts);
+CREATE TABLE IF NOT EXISTS line_attribution (
+  tenant_id TEXT NOT NULL,
+  line_user_id TEXT NOT NULL,
+  campaign_id TEXT NOT NULL DEFAULT '',
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (tenant_id, line_user_id)
+);
 INSERT OR IGNORE INTO plans (id, name, price_monthly, goal_impressions, description) VALUES
   ('plan-standard', 'スタンダード', 20000, 40000, '事業者向け標準枠（目標impは仮置き・要確定）'),
   ('plan-premium', 'プレミアム', 50000, 120000, '提携店舗・エリア面の優先枠（目標impは仮置き・要確定）'),
