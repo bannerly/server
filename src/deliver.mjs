@@ -32,6 +32,10 @@ function ruleMatch(c, ctx, counts) {
     if (!ctx.region) return false;
     if (!c.regions.map(r => String(r).toLowerCase()).includes(String(ctx.region).toLowerCase())) return false;
   }
+  if (Array.isArray(c.cities) && c.cities.length) {
+    if (!ctx.city) return false;
+    if (!c.cities.map(r => String(r).toLowerCase()).includes(String(ctx.city).toLowerCase())) return false;
+  }
   if (c.daily_cap > 0 && (counts.today || 0) >= c.daily_cap) return false;
   if (c.type === "contract" && c.goal_impressions > 0 && (counts.total || 0) >= c.goal_impressions) return false;
   return true;

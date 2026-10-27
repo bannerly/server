@@ -63,6 +63,7 @@ async function serveAd(env, repo, zoneId, req, url) {
   const parts = jstParts();
   const ctx = {
     region: url.searchParams.get("region") || req.headers.get("x-region") || (req.cf && req.cf.region) || null,
+    city: url.searchParams.get("city") || req.headers.get("x-city") || (req.cf && req.cf.city) || null,
     hour: parts.hour, weekday: parts.weekday, cookie: req.headers.get("cookie") || "",
   };
   const countsFn = c => repo.getImpCounts(c.id, parts.date);

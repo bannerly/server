@@ -52,7 +52,7 @@ export async function handleAdmin(req, url, repo, helpers, newId, env = {}) {
           goal_impressions: parseInt(g("goal_impressions") || "0", 10) || 0,
           freq_cap_per_day: parseInt(g("freq_cap_per_day") || "0", 10) || 0,
           weight: parseInt(g("weight") || "1", 10) || 1, daily_cap: parseInt(g("daily_cap") || "0", 10) || 0,
-          regions: parseList(g("regions")), hours: String(g("hours") || "").trim(), weekdays: parseList(g("weekdays"), true),
+          regions: parseList(g("regions")), cities: parseList(g("cities")), hours: String(g("hours") || "").trim(), weekdays: parseList(g("weekdays"), true),
           active: true, created_at: Date.now(),
         });
         if (g("html") || g("image_url") || g("title")) {
@@ -108,7 +108,7 @@ export async function handleAdmin(req, url, repo, helpers, newId, env = {}) {
           id: cid, tenant_id: o.tenant_id, advertiser_id: o.advertiser_id, zone_id: o.zone_id,
           name: `${adv ? adv.name : "広告主"}（${plan ? plan.name : "プラン"}）`, type: "contract",
           starts_at: o.starts_at, ends_at: o.ends_at, goal_impressions: plan ? plan.goal_impressions : 0,
-          freq_cap_per_day: 0, weight: 1, daily_cap: 0, regions: [], hours: "", weekdays: [], active: true, created_at: Date.now(),
+          freq_cap_per_day: 0, weight: 1, daily_cap: 0, regions: [], cities: [], hours: "", weekdays: [], active: true, created_at: Date.now(),
         });
         await repo.updateOrder(o.id, { status: "active", campaign_id: cid });
         await helpers.publishZone(o.zone_id);
@@ -301,6 +301,7 @@ export async function handleAdmin(req, url, repo, helpers, newId, env = {}) {
         const p = progressOf(c, 0); // 進捗はレポート側で実数表示（ここでは目標のみ）
         const rules = [
           c.regions?.length ? `地域:${c.regions.join("/")}` : null,
+          c.cities?.length ? `市:${c.cities.join("/")}` : null,
           c.hours ? `時間:${c.hours}` : null,
           c.weekdays?.length ? `曜日:${c.weekdays.join("/")}` : null,
           c.daily_cap ? `日次上限:${c.daily_cap}` : null,
@@ -355,6 +356,7 @@ export async function handleAdmin(req, url, repo, helpers, newId, env = {}) {
       <label>開始日 <input name="starts_at" type="date" value="${today()}"> 終了日 <input name="ends_at" type="date" value="2099-12-31"></label>
       <label>目標imp <input name="goal_impressions" type="number" value="0"> 日次上限 <input name="daily_cap" type="number" value="0"> 重み <input name="weight" type="number" value="1"> FC/日 <input name="freq_cap_per_day" type="number" value="0"></label>
       <label>地域（カンマ区切り） <input name="regions" style="width:60%"></label>
+      <label>市（カンマ区切り・cf.city の英語表記 例 Yokohama,Chiba） <input name="cities" style="width:60%"></label>
       <label>時間帯（例 18-24） <input name="hours"> 曜日（0=日〜6=土） <input name="weekdays"></label>
       <label>クリエイティブ種別 <select name="creative_type"><option value="html">HTML（Web向け）</option><option value="native">構造化（アプリ向け: 画像+文）</option></select></label>
       <label>バナーHTML（html種別用） <textarea name="html" rows="3" style="width:100%"></textarea></label>

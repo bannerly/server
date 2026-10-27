@@ -6,7 +6,7 @@ export function newId(prefix) {
 }
 
 const parseArr = v => { try { const a = JSON.parse(v || "[]"); return Array.isArray(a) ? a : []; } catch { return []; } };
-const mapCampaign = r => r && ({ ...r, active: !!r.active, regions: parseArr(r.regions), weekdays: parseArr(r.weekdays) });
+const mapCampaign = r => r && ({ ...r, active: !!r.active, regions: parseArr(r.regions), cities: parseArr(r.cities), weekdays: parseArr(r.weekdays) });
 const mapZone = r => r || null;
 
 export class D1Repo {
@@ -37,19 +37,19 @@ export class D1Repo {
   async listCampaignsByZone(zoneId) { return (await this.all("SELECT * FROM campaigns WHERE zone_id=?", zoneId)).map(mapCampaign); }
   async getCampaign(id) { return mapCampaign(await this.first("SELECT * FROM campaigns WHERE id=?", id)); }
   async createCampaign(c) {
-    await this.run(`INSERT INTO campaigns (id,tenant_id,advertiser_id,zone_id,name,type,starts_at,ends_at,goal_impressions,freq_cap_per_day,weight,daily_cap,regions,hours,weekdays,active,created_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    await this.run(`INSERT INTO campaigns (id,tenant_id,advertiser_id,zone_id,name,type,starts_at,ends_at,goal_impressions,freq_cap_per_day,weight,daily_cap,regions,cities,hours,weekdays,active,created_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       c.id, c.tenant_id, c.advertiser_id, c.zone_id, c.name, c.type, c.starts_at, c.ends_at, c.goal_impressions || 0,
-      c.freq_cap_per_day || 0, c.weight || 1, c.daily_cap || 0, JSON.stringify(c.regions || []), c.hours || "",
+      c.freq_cap_per_day || 0, c.weight || 1, c.daily_cap || 0, JSON.stringify(c.regions || []), JSON.stringify(c.cities || []), c.hours || "",
       JSON.stringify(c.weekdays || []), c.active ? 1 : 0, c.created_at);
     return c;
   }
   async updateCampaign(id, patch) {
     const cur = await this.getCampaign(id); if (!cur) return null;
     const n = { ...cur, ...patch };
-    await this.run(`UPDATE campaigns SET name=?,type=?,starts_at=?,ends_at=?,goal_impressions=?,freq_cap_per_day=?,weight=?,daily_cap=?,regions=?,hours=?,weekdays=?,active=? WHERE id=?`,
+    await this.run(`UPDATE campaigns SET name=?,type=?,starts_at=?,ends_at=?,goal_impressions=?,freq_cap_per_day=?,weight=?,daily_cap=?,regions=?,cities=?,hours=?,weekdays=?,active=? WHERE id=?`,
       n.name, n.type, n.starts_at, n.ends_at, n.goal_impressions || 0, n.freq_cap_per_day || 0, n.weight || 1, n.daily_cap || 0,
-      JSON.stringify(n.regions || []), n.hours || "", JSON.stringify(n.weekdays || []), n.active ? 1 : 0, id);
+      JSON.stringify(n.regions || []), JSON.stringify(n.cities || []), n.hours || "", JSON.stringify(n.weekdays || []), n.active ? 1 : 0, id);
     return n;
   }
   async listBanners() { return this.all("SELECT * FROM banners ORDER BY created_at"); }
