@@ -1,0 +1,81 @@
+// D1 用リポジトリ。repo-local.mjs と同一インターフェース（戻り値の形を揃える）。
+// 注意: このファイルはローカル環境では実行検証していない（初回は wrangler で要確認）。
+export function newId(prefix) {
+  return `${prefix}-${Math.random().toString(16).slice(2, 10)}${Date.now().toString(16).slice(-4)}`;
+}
+
+const parseArr = v => { try { const a = JSON.parse(v || "[]"); return Array.isArray(a) ? a : []; } catch { return []; } };
+const mapCampaign = r => r && ({ ...r, active: !!r.active, regions: parseArr(r.regions), weekdays: parseArr(r.weekdays) });
+const mapZone = r => r || null;
+
+export class D1Repo {
+  constructor(db) { this.db = db; }
+  async all(sql, ...binds) { const { results } = await this.db.prepare(sql).bind(...binds).all(); return results; }
+  async first(sql, ...binds) { return await this.db.prepare(sql).bind(...binds).first(); }
+  async run(sql, ...binds) { return await this.db.prepare(sql).bind(...binds).run(); }
+
+  async listTenants() { return this.all("SELECT * FROM tenants ORDER BY created_at"); }
+  async createTenant(t) { await this.run("INSERT INTO tenants (id,name,created_at) VALUES (?,?,?)", t.id, t.name, t.created_at); return t; }
+  async listZones() { return this.all("SELECT * FROM zones ORDER BY created_at"); }
+  async getZone(id) { return mapZone(await this.first("SELECT * FROM zones WHERE id=?", id)); }
+  async createZone(z) { await this.run("INSERT INTO zones (id,tenant_id,name,width,height,backfill_html,created_at) VALUES (?,?,?,?,?,?,?)", z.id, z.tenant_id, z.name, z.width, z.height, z.backfill_html, z.created_at); return z; }
+  async listAdvertisers(tenantId) { return tenantId ? this.all("SELECT * FROM advertisers WHERE tenant_id=?", tenantId) : this.all("SELECT * FROM advertisers"); }
+  async createAdvertiser(a) { await this.run("INSERT INTO advertisers (id,tenant_id,name,contact_email,created_at) VALUES (?,?,?,?,?)", a.id, a.tenant_id, a.name, a.contact_email || "", a.created_at); return a; }
+  async getAdvertiser(id) { return this.first("SELECT * FROM advertisers WHERE id=?", id); }
+  async listCampaigns() { return (await this.all("SELECT * FROM campaigns ORDER BY created_at")).map(mapCampaign); }
+  async listCampaignsByZone(zoneId) { return (await this.all("SELECT * FROM campaigns WHERE zone_id=?", zoneId)).map(mapCampaign); }
+  async getCampaign(id) { return mapCampaign(await this.first("SELECT * FROM campaigns WHERE id=?", id)); }
+  async createCampaign(c) {
+    await this.run(`INSERT INTO campaigns (id,tenant_id,advertiser_id,zone_id,name,type,starts_at,ends_at,goal_impressions,freq_cap_per_day,weight,daily_cap,regions,hours,weekdays,active,created_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      c.id, c.tenant_id, c.advertiser_id, c.zone_id, c.name, c.type, c.starts_at, c.ends_at, c.goal_impressions || 0,
+      c.freq_cap_per_day || 0, c.weight || 1, c.daily_cap || 0, JSON.stringify(c.regions || []), c.hours || "",
+      JSON.stringify(c.weekdays || []), c.active ? 1 : 0, c.created_at);
+    return c;
+  }
+  async updateCampaign(id, patch) {
+    const cur = await this.getCampaign(id); if (!cur) return null;
+    const n = { ...cur, ...patch };
+    await this.run(`UPDATE campaigns SET name=?,type=?,starts_at=?,ends_at=?,goal_impressions=?,freq_cap_per_day=?,weight=?,daily_cap=?,regions=?,hours=?,weekdays=?,active=? WHERE id=?`,
+      n.name, n.type, n.starts_at, n.ends_at, n.goal_impressions || 0, n.freq_cap_per_day || 0, n.weight || 1, n.daily_cap || 0,
+      JSON.stringify(n.regions || []), n.hours || "", JSON.stringify(n.weekdays || []), n.active ? 1 : 0, id);
+    return n;
+  }
+  async listBanners() { return this.all("SELECT * FROM banners ORDER BY created_at"); }
+  async listBannersByCampaign(cid) { return this.all("SELECT * FROM banners WHERE campaign_id=?", cid); }
+  async getBanner(id) { return this.first("SELECT * FROM banners WHERE id=?", id); }
+  async createBanner(b) { await this.run("INSERT INTO banners (id,tenant_id,campaign_id,creative_type,html,image_url,title,body,link_url,review_status,review_note,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", b.id, b.tenant_id, b.campaign_id, b.creative_type || "html", b.html || "", b.image_url || "", b.title || "", b.body || "", b.link_url, b.review_status || "pending", b.review_note || "", b.created_at); return b; }
+  async setBannerReview(id, status, note = "") { await this.run("UPDATE banners SET review_status=?, review_note=? WHERE id=?", status, note, id); return this.getBanner(id); }
+  async listPlans() { return this.all("SELECT * FROM plans"); }
+  async createPlan(p) { await this.run("INSERT INTO plans (id,name,price_monthly,goal_impressions,description) VALUES (?,?,?,?,?)", p.id, p.name, p.price_monthly, p.goal_impressions || 0, p.description || ""); return p; }
+  async getPlan(id) { return this.first("SELECT * FROM plans WHERE id=?", id); }
+  async listOrders() { return this.all("SELECT * FROM orders ORDER BY created_at"); }
+  async createOrder(o) { await this.run("INSERT INTO orders (id,tenant_id,advertiser_id,plan_id,zone_id,starts_at,ends_at,status,campaign_id,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)", o.id, o.tenant_id, o.advertiser_id, o.plan_id, o.zone_id, o.starts_at, o.ends_at, o.status || "applied", o.campaign_id || null, o.created_at); return o; }
+  async getOrder(id) { return this.first("SELECT * FROM orders WHERE id=?", id); }
+  async updateOrder(id, patch) {
+    const cur = await this.getOrder(id); if (!cur) return null;
+    const n = { ...cur, ...patch };
+    await this.run("UPDATE orders SET status=?, campaign_id=? WHERE id=?", n.status, n.campaign_id || null, id);
+    return n;
+  }
+  async insertEvent(e) { await this.run("INSERT INTO events_raw (id,ts,kind,tenant_id,zone_id,campaign_id,banner_id) VALUES (?,?,?,?,?,?,?)", e.id, e.ts, e.kind, e.tenant_id, e.zone_id, e.campaign_id, e.banner_id); return e; }
+  async listEvents() { return this.all("SELECT * FROM events_raw ORDER BY ts"); }
+  async getCount(campaignId, dateStr = null, partsFn) {
+    // 本番ではイベント表からの集計（インデックス前提）。規模が大きくなれば KV カウンタへ移行する。
+    const rows = await this.all("SELECT ts FROM events_raw WHERE campaign_id=? AND kind='imp'", campaignId);
+    if (!dateStr) return rows.length;
+    return rows.filter(r => partsFn(r.ts).date === dateStr).length;
+  }
+  async upsertStatsHourly(row) {
+    await this.run(`INSERT INTO stats_hourly (hour,tenant_id,zone_id,campaign_id,imp,click) VALUES (?,?,?,?,?,?)
+      ON CONFLICT(hour,campaign_id) DO UPDATE SET imp=excluded.imp, click=excluded.click`,
+      row.hour, row.tenant_id, row.zone_id, row.campaign_id, row.imp, row.click);
+  }
+  async listStatsHourly() { return this.all("SELECT * FROM stats_hourly ORDER BY hour"); }
+  // スナップショットと配信トークンは KV 側で扱うため、D1 では未使用（worker が分岐）
+  async putSnapshot() { throw new Error("snapshot is stored in KV"); }
+  async getSnapshot() { return null; }
+  async putDelivery() { throw new Error("delivery token is stored in KV"); }
+  async getDelivery() { return null; }
+  async markDeliveryCounted() {}
+}

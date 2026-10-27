@@ -1,0 +1,4 @@
+data-prod.json
+*.log
+node_modules/
+.dev.vars
