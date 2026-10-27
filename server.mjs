@@ -10,6 +10,9 @@ const env = {
   STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET || "",
   STRIPE_ACCOUNT_TYPE: process.env.STRIPE_ACCOUNT_TYPE || "standard",
   ALLOW_OPEN_SIGNUP: process.env.ALLOW_OPEN_SIGNUP || "",
+  LICENSE_KEY: process.env.LICENSE_KEY || "",
+  REPORT_ENDPOINT: process.env.REPORT_ENDPOINT || "",
+  DEPLOYMENT_ID: process.env.DEPLOYMENT_ID || "",
   PLATFORM_FEE_BPS: process.env.PLATFORM_FEE_BPS || "0",
   PUBLIC_BASE_URL: process.env.PUBLIC_BASE_URL || "http://localhost:8788",
 };

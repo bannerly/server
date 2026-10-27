@@ -125,6 +125,19 @@ GET /ad/<zone-id>?format=json → 構造化レスポンス（creative / imp・cl
 
 `schema.sql` を参照してください。主要テーブル: `tenants` / `zones` / `advertisers` / `campaigns` / `banners`（`review_status` を持ちます）/ `plans` / `orders` / `events_raw` / `stats_hourly`。
 
+## メータリングと利用量レポート
+
+利用料を配信量に応じて取るためのメータリングです。
+
+- **数える対象**: 課金の基礎は「配信インプレッション」（ボット除外・重複排除済み）。クリックは参考値として一緒に記録しますが、従量の基礎にはしません
+- **メーター**: イベント取り込み時に更新されるカウンタ（合計 / 日次）。明細の生イベントと突合でき、管理画面から再構築もできます
+- **締め**: JST の暦月。毎月1日に先月分が自動生成されます（管理画面から手動生成も可）
+- **改ざん検知**: レポートは SHA-256 ハッシュで前月と連鎖し、デプロイごとのライセンスキー（`LICENSE_KEY`）で署名（HMAC）されます。後から数字を変えると検証で不一致になります
+- **送信**: `REPORT_ENDPOINT` を設定すると集計レポートだけを POST します（生イベントや閲覧者情報は送りません）。未設定ならローカル保存のみ
+- **検証（受信側）**: `node scripts/verify-report.mjs <report.json> --key <LICENSE_KEY> [--prev <前月report.json>]`
+
+環境変数: `LICENSE_KEY`（デプロイごとに発行）、`REPORT_ENDPOINT`、`DEPLOYMENT_ID`。
+
 ## 状態
 
 Phase 1（実用化）まで実装済みです。ローカル構成（JSON リポジトリ）での通し検証は完了しています。D1 構成はコード完成済みで、初回デプロイ時の動作確認を前提としています。決済連携（Stripe）と GAM 実連携は今後の段階です。

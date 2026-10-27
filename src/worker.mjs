@@ -5,6 +5,7 @@ import { D1Repo, newId as d1NewId } from "./repo-d1.mjs";
 import { jstParts, today, pickFromSnapshot, buildSnapshot, publishAllSnapshots, aggregateHour, hourKeyOf } from "./deliver.mjs";
 import { handleAdmin, esc } from "./admin.mjs";
 import { handleSignup, handleTenant } from "./tenant.mjs";
+import { sendUsageReport, prevMonthOf } from "./report.mjs";
 import { verifyWebhook } from "./stripe.mjs";
 
 const GIF = new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0x01, 0x00, 0x01, 0x00, 0x80, 0x00, 0x00, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x21, 0xf9, 0x04, 0x01, 0x00, 0x00, 0x00, 0x00, 0x2c, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x02, 0x02, 0x44, 0x01, 0x00, 0x3b]);
@@ -185,7 +186,7 @@ export default {
         publishZone: async zoneId => { const z = await repo.getZone(zoneId); if (z) await snap.put(zoneId, await buildSnapshot(repo, z)); },
         publishAll: async () => { await publishAllSnapshots(repo, (zid, s) => snap.put(zid, s)); },
       };
-      return handleAdmin(req, url, repo, helpers, newId);
+      return handleAdmin(req, url, repo, helpers, newId, env);
     }
 
     if (url.pathname === "/") {
@@ -205,11 +206,15 @@ export default {
     }
   },
 
-  // Cron: スナップショット再発行 + 前時分の集計
+  // Cron: スナップショット再発行 + 前時分の集計 +（毎月1日）先月分の利用量レポート送信
   async scheduled(event, env) {
     const repo = getRepo(env);
     const snap = snapStore(env, repo);
     await publishAllSnapshots(repo, (zid, s) => snap.put(zid, s));
     await aggregateHour(repo, hourKeyOf(Date.now() - 3600000));
+    const parts = jstParts();
+    if (parts.date.endsWith("-01") && (env.LICENSE_KEY || env.REPORT_ENDPOINT)) {
+      await sendUsageReport(env, repo, prevMonthOf(parts.date));
+    }
   },
 };

@@ -112,6 +112,16 @@ export class D1Repo {
     if (!dateStr) return rows.length;
     return rows.filter(r => partsFn(r.ts).date === dateStr).length;
   }
+  async listCountersTotal() { return this.all("SELECT * FROM counters_total"); }
+  async listCountersDaily(fromDay, toDay) { return this.all("SELECT * FROM counters_daily WHERE day>=? AND day<? ORDER BY day", fromDay, toDay); }
+  async getReport(period) { const r = await this.first("SELECT * FROM usage_reports WHERE period=?", period); return r ? { ...r, payload: JSON.parse(r.payload) } : null; }
+  async getLatestReportBefore(period) { const r = await this.first("SELECT * FROM usage_reports WHERE period<? ORDER BY period DESC LIMIT 1", period); return r ? { ...r, payload: JSON.parse(r.payload) } : null; }
+  async saveReport(rec) {
+    await this.run(`INSERT INTO usage_reports (period,deployment_id,payload,hash,sent_at) VALUES (?,?,?,?,?)
+      ON CONFLICT(period) DO UPDATE SET payload=excluded.payload, hash=excluded.hash, sent_at=excluded.sent_at`,
+      rec.period, rec.deployment_id, JSON.stringify(rec.payload), rec.hash, rec.sent_at);
+    return rec;
+  }
   async upsertStatsHourly(row) {
     await this.run(`INSERT INTO stats_hourly (hour,tenant_id,zone_id,campaign_id,imp,click) VALUES (?,?,?,?,?,?)
       ON CONFLICT(hour,campaign_id) DO UPDATE SET imp=excluded.imp, click=excluded.click`,

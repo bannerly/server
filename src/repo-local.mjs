@@ -62,6 +62,7 @@ function seed() {
     events: [],
     counters_total: [],
     counters_daily: [],
+    reports: [],
     stats_hourly: [],
     deliveries: {},
     snapshots: {},
@@ -150,6 +151,21 @@ export class LocalRepo {
       imp++;
     }
     return imp;
+  }
+  async listCountersTotal() { return this.load().counters_total || []; }
+  async listCountersDaily(fromDay, toDay) { return (this.load().counters_daily || []).filter(r => r.day >= fromDay && r.day < toDay); }
+  async getReport(period) { return (this.load().reports || []).find(r => r.period === period) || null; }
+  async getLatestReportBefore(period) {
+    const rs = (this.load().reports || []).filter(r => r.period < period).sort((a, b) => a.period.localeCompare(b.period));
+    return rs.length ? rs[rs.length - 1] : null;
+  }
+  async saveReport(rec) {
+    const db = this.load();
+    db.reports = db.reports || [];
+    const i = db.reports.findIndex(r => r.period === rec.period);
+    if (i >= 0) db.reports[i] = rec; else db.reports.push(rec);
+    this.save(db);
+    return rec;
   }
   async upsertStatsHourly(row) {
     const db = this.load();

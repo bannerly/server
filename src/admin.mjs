@@ -1,5 +1,6 @@
 // 管理画面（サーバー描画）。配信に効く変更のたびに helpers.publishZone を呼ぶ。
 import { jstParts, today, progressOf, aggregateHour, hourKeyOf } from "./deliver.mjs";
+import { sendUsageReport, prevMonthOf } from "./report.mjs";
 
 export function esc(s) {
   return String(s ?? "").replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
@@ -13,7 +14,7 @@ const redirect = loc => new Response(null, { status: 303, headers: { location: l
 const parseList = (v, num = false) => String(v || "").split(",").map(s => s.trim()).filter(Boolean).map(s => num ? parseInt(s, 10) : s);
 const plus30 = () => new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
 
-export async function handleAdmin(req, url, repo, helpers, newId) {
+export async function handleAdmin(req, url, repo, helpers, newId, env = {}) {
   const parts = url.pathname.split("/").filter(Boolean); // ["admin", ...]
   const sub = parts[1];
 
@@ -118,6 +119,19 @@ export async function handleAdmin(req, url, repo, helpers, newId) {
       const o = await repo.getOrder(parts[2]);
       if (o) await repo.updateOrder(o.id, { status: "rejected" });
       return redirect("/admin");
+    }
+    if (sub === "send-report") {
+      const period = g("period") || prevMonthOf(today());
+      try {
+        const { report, sent, reused } = await sendUsageReport(env, repo, period);
+        return page("利用量レポート", `
+          <h2>利用量レポート（${esc(period)}）</h2>
+          <p>imp 合計: <strong>${report.totals.imp}</strong> / click: ${report.totals.click}<br>
+          ハッシュ: <code>${esc(report.hash)}</code><br>
+          署名: ${report.signature ? `<code>${esc(report.signature.slice(0, 24))}…</code>` : "なし（LICENSE_KEY 未設定）"}<br>
+          送信: ${sent ? "済み" : (env.REPORT_ENDPOINT ? "未送信" : "送信先未設定（ローカル保存のみ）")}${reused ? "（既存レポートを再表示）" : ""}</p>
+          <p><a href="/admin/report">レポートへ戻る</a></p>`);
+      } catch (e) { return new Response(`送信エラー: ${esc(e.message)}`, { status: 502 }); }
     }
     if (sub === "rebuild-counters") {
       await repo.rebuildCounters();
@@ -242,6 +256,7 @@ export async function handleAdmin(req, url, repo, helpers, newId) {
       <h2>時間次集計（stats_hourly）</h2>
       <form method="post" action="/admin/aggregate"><label>対象時（例 2026-10-27T15） <input name="hour" placeholder="空=前時"></label> <button>集計する</button></form>
       <form method="post" action="/admin/rebuild-counters" style="margin-top:8px;"><button>配信カウンタを再構築（生イベントから再計算）</button></form>
+      <form method="post" action="/admin/send-report" style="margin-top:8px;"><label>利用量レポート期間（YYYY-MM） <input name="period" value="${prevMonthOf(today())}"></label> <button>署名付きレポートを生成・送信</button></form>
       <table border="1" cellspacing="0" cellpadding="6" style="border-collapse:collapse;font-size:14px;">
       <tr><th>時</th><th>キャンペーン</th><th>表示</th><th>クリック</th></tr>${statsRows || '<tr><td colspan="4">未集計</td></tr>'}</table>`);
   }
