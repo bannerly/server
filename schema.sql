@@ -115,11 +115,13 @@ CREATE TABLE IF NOT EXISTS counters_daily (
   PRIMARY KEY (campaign_id, day)
 );
 CREATE TABLE IF NOT EXISTS usage_reports (
-  period TEXT PRIMARY KEY,
+  period TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'monthly',
   deployment_id TEXT NOT NULL,
   payload TEXT NOT NULL,
   hash TEXT NOT NULL,
-  sent_at INTEGER
+  sent_at INTEGER,
+  PRIMARY KEY (period, kind)
 );
 CREATE TABLE IF NOT EXISTS stats_hourly (
   hour TEXT NOT NULL,

@@ -114,12 +114,12 @@ export class D1Repo {
   }
   async listCountersTotal() { return this.all("SELECT * FROM counters_total"); }
   async listCountersDaily(fromDay, toDay) { return this.all("SELECT * FROM counters_daily WHERE day>=? AND day<? ORDER BY day", fromDay, toDay); }
-  async getReport(period) { const r = await this.first("SELECT * FROM usage_reports WHERE period=?", period); return r ? { ...r, payload: JSON.parse(r.payload) } : null; }
-  async getLatestReportBefore(period) { const r = await this.first("SELECT * FROM usage_reports WHERE period<? ORDER BY period DESC LIMIT 1", period); return r ? { ...r, payload: JSON.parse(r.payload) } : null; }
+  async getReport(period, kind = "monthly") { const r = await this.first("SELECT * FROM usage_reports WHERE period=? AND kind=?", period, kind); return r ? { ...r, payload: JSON.parse(r.payload) } : null; }
+  async getLatestReportBefore(period, kind = "monthly") { const r = await this.first("SELECT * FROM usage_reports WHERE period<? AND kind=? ORDER BY period DESC LIMIT 1", period, kind); return r ? { ...r, payload: JSON.parse(r.payload) } : null; }
   async saveReport(rec) {
-    await this.run(`INSERT INTO usage_reports (period,deployment_id,payload,hash,sent_at) VALUES (?,?,?,?,?)
-      ON CONFLICT(period) DO UPDATE SET payload=excluded.payload, hash=excluded.hash, sent_at=excluded.sent_at`,
-      rec.period, rec.deployment_id, JSON.stringify(rec.payload), rec.hash, rec.sent_at);
+    await this.run(`INSERT INTO usage_reports (period,kind,deployment_id,payload,hash,sent_at) VALUES (?,?,?,?,?,?)
+      ON CONFLICT(period,kind) DO UPDATE SET payload=excluded.payload, hash=excluded.hash, sent_at=excluded.sent_at`,
+      rec.period, rec.kind || "monthly", rec.deployment_id, JSON.stringify(rec.payload), rec.hash, rec.sent_at);
     return rec;
   }
   async upsertStatsHourly(row) {

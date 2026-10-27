@@ -1,6 +1,6 @@
 // 管理画面（サーバー描画）。配信に効く変更のたびに helpers.publishZone を呼ぶ。
 import { jstParts, today, progressOf, aggregateHour, hourKeyOf } from "./deliver.mjs";
-import { sendUsageReport, prevMonthOf } from "./report.mjs";
+import { sendUsageReport, sendDailyCheckpoint, prevMonthOf } from "./report.mjs";
 
 export function esc(s) {
   return String(s ?? "").replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
@@ -133,6 +133,18 @@ export async function handleAdmin(req, url, repo, helpers, newId, env = {}) {
           <p><a href="/admin/report">レポートへ戻る</a></p>`);
       } catch (e) { return new Response(`送信エラー: ${esc(e.message)}`, { status: 502 }); }
     }
+    if (sub === "send-checkpoint") {
+      const day = g("day") || jstParts(Date.now() - 86400000).date;
+      try {
+        const { report, sent, reused } = await sendDailyCheckpoint(env, repo, day);
+        return page("日次チェックポイント", `
+          <h2>日次チェックポイント（${esc(day)}）</h2>
+          <p>imp: <strong>${report.totals.imp}</strong> / click: ${report.totals.click}<br>
+          ハッシュ: <code>${esc(report.hash)}</code><br>
+          送信: ${sent ? "済み" : (env.REPORT_ENDPOINT ? "未送信" : "送信先未設定（ローカル保存のみ）")}${reused ? "（既存チェックポイントを再表示）" : ""}</p>
+          <p><a href="/admin/report">レポートへ戻る</a></p>`);
+      } catch (e) { return new Response(`送信エラー: ${esc(e.message)}`, { status: 502 }); }
+    }
     if (sub === "rebuild-counters") {
       await repo.rebuildCounters();
       return redirect("/admin/report");
@@ -257,6 +269,7 @@ export async function handleAdmin(req, url, repo, helpers, newId, env = {}) {
       <form method="post" action="/admin/aggregate"><label>対象時（例 2026-10-27T15） <input name="hour" placeholder="空=前時"></label> <button>集計する</button></form>
       <form method="post" action="/admin/rebuild-counters" style="margin-top:8px;"><button>配信カウンタを再構築（生イベントから再計算）</button></form>
       <form method="post" action="/admin/send-report" style="margin-top:8px;"><label>利用量レポート期間（YYYY-MM） <input name="period" value="${prevMonthOf(today())}"></label> <button>署名付きレポートを生成・送信</button></form>
+      <form method="post" action="/admin/send-checkpoint" style="margin-top:8px;"><label>日次チェックポイント（YYYY-MM-DD） <input name="day" value="${jstParts(Date.now() - 86400000).date}"></label> <button>チェックポイントを署名・送信</button></form>
       <table border="1" cellspacing="0" cellpadding="6" style="border-collapse:collapse;font-size:14px;">
       <tr><th>時</th><th>キャンペーン</th><th>表示</th><th>クリック</th></tr>${statsRows || '<tr><td colspan="4">未集計</td></tr>'}</table>`);
   }

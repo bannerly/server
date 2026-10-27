@@ -5,7 +5,7 @@ import { D1Repo, newId as d1NewId } from "./repo-d1.mjs";
 import { jstParts, today, pickFromSnapshot, buildSnapshot, publishAllSnapshots, aggregateHour, hourKeyOf } from "./deliver.mjs";
 import { handleAdmin, esc } from "./admin.mjs";
 import { handleSignup, handleTenant } from "./tenant.mjs";
-import { sendUsageReport, prevMonthOf } from "./report.mjs";
+import { sendUsageReport, sendDailyCheckpoint, prevMonthOf } from "./report.mjs";
 import { verifyWebhook } from "./stripe.mjs";
 
 const GIF = new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0x01, 0x00, 0x01, 0x00, 0x80, 0x00, 0x00, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x21, 0xf9, 0x04, 0x01, 0x00, 0x00, 0x00, 0x00, 0x2c, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x02, 0x02, 0x44, 0x01, 0x00, 0x3b]);
@@ -215,6 +215,10 @@ export default {
     const parts = jstParts();
     if (parts.date.endsWith("-01") && (env.LICENSE_KEY || env.REPORT_ENDPOINT)) {
       await sendUsageReport(env, repo, prevMonthOf(parts.date));
+    }
+    // 日次チェックポイント: 前日（JST）分を署名して送信（冪等）
+    if (env.LICENSE_KEY || env.REPORT_ENDPOINT) {
+      await sendDailyCheckpoint(env, repo, jstParts(Date.now() - 86400000).date);
     }
   },
 };

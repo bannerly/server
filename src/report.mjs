@@ -42,11 +42,40 @@ export async function buildUsageReport(repo, period, deploymentId) {
   }
   const breakdown = [...byCampaign.values()].sort((a, b) => a.campaign_id.localeCompare(b.campaign_id));
   const totals = breakdown.reduce((s, r) => ({ imp: s.imp + r.imp, click: s.click + r.click }), { imp: 0, click: 0 });
-  const prev = await repo.getLatestReportBefore(period);
+  const prev = await repo.getLatestReportBefore(period, "monthly");
   return {
     version: 1,
+    kind: "monthly",
     deployment_id: deploymentId || "unknown",
     period,
+    generated_at: Date.now(),
+    prev_hash: prev ? prev.hash : "",
+    totals,
+    breakdown,
+  };
+}
+
+// day = "YYYY-MM-DD"（JST）。その日のカウンタだけを集計する日次チェックポイント。
+export async function buildDailyCheckpoint(repo, day, deploymentId) {
+  const totalsRows = await repo.listCountersTotal();
+  const meta = new Map(totalsRows.map(r => [r.campaign_id, r]));
+  const nextDay = new Date(Date.parse(`${day}T00:00:00Z`) + 86400000).toISOString().slice(0, 10);
+  const daily = await repo.listCountersDaily(day, nextDay);
+  const byCampaign = new Map();
+  for (const d of daily) {
+    const m = meta.get(d.campaign_id) || { tenant_id: "unknown", zone_id: "unknown" };
+    if (!byCampaign.has(d.campaign_id)) byCampaign.set(d.campaign_id, { tenant_id: m.tenant_id, zone_id: m.zone_id, campaign_id: d.campaign_id, imp: 0, click: 0 });
+    const row = byCampaign.get(d.campaign_id);
+    row.imp += d.imp; row.click += d.click;
+  }
+  const breakdown = [...byCampaign.values()].sort((a, b) => a.campaign_id.localeCompare(b.campaign_id));
+  const totals = breakdown.reduce((s, r) => ({ imp: s.imp + r.imp, click: s.click + r.click }), { imp: 0, click: 0 });
+  const prev = await repo.getLatestReportBefore(day, "daily");
+  return {
+    version: 1,
+    kind: "daily",
+    deployment_id: deploymentId || "unknown",
+    period: day,
     generated_at: Date.now(),
     prev_hash: prev ? prev.hash : "",
     totals,
@@ -60,11 +89,8 @@ export async function signReport(report, licenseKey) {
   return { ...report, hash, signature };
 }
 
-// 生成 → 署名 → 保存 → （REPORT_ENDPOINT があれば）送信。同じ期間は冪等（再生成しない）。
-export async function sendUsageReport(env, repo, period, { force = false } = {}) {
-  const existing = await repo.getReport(period);
-  if (existing && !force) return { report: existing.payload, sent: !!existing.sent_at, reused: true };
-  const core = await buildUsageReport(repo, period, env.DEPLOYMENT_ID || "unknown");
+async function deliver(env, repo, core) {
+  const kind = core.kind || "monthly";
   const signed = await signReport(core, env.LICENSE_KEY || "");
   let sentAt = null;
   if (env.REPORT_ENDPOINT) {
@@ -76,8 +102,21 @@ export async function sendUsageReport(env, repo, period, { force = false } = {})
     if (!res.ok) throw new Error(`レポート送信に失敗しました（${res.status}）`);
     sentAt = Date.now();
   }
-  await repo.saveReport({ period, deployment_id: signed.deployment_id, payload: signed, hash: signed.hash, sent_at: sentAt });
+  await repo.saveReport({ period: core.period, kind, deployment_id: signed.deployment_id, payload: signed, hash: signed.hash, sent_at: sentAt });
   return { report: signed, sent: !!sentAt, reused: false };
+}
+
+// 生成 → 署名 → 保存 → （REPORT_ENDPOINT があれば）送信。同じ期間は冪等（再生成しない）。
+export async function sendUsageReport(env, repo, period, { force = false } = {}) {
+  const existing = await repo.getReport(period, "monthly");
+  if (existing && !force) return { report: existing.payload, sent: !!existing.sent_at, reused: true };
+  return deliver(env, repo, await buildUsageReport(repo, period, env.DEPLOYMENT_ID || "unknown"));
+}
+
+export async function sendDailyCheckpoint(env, repo, day, { force = false } = {}) {
+  const existing = await repo.getReport(day, "daily");
+  if (existing && !force) return { report: existing.payload, sent: !!existing.sent_at, reused: true };
+  return deliver(env, repo, await buildDailyCheckpoint(repo, day, env.DEPLOYMENT_ID || "unknown"));
 }
 
 // 受信側の検証: ハッシュ再計算 + 署名照合 + 前月との連鎖確認
