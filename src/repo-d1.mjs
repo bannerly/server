@@ -8,6 +8,7 @@ export function newId(prefix) {
 const parseArr = v => { try { const a = JSON.parse(v || "[]"); return Array.isArray(a) ? a : []; } catch { return []; } };
 const mapCampaign = r => r && ({ ...r, active: !!r.active, regions: parseArr(r.regions), cities: parseArr(r.cities), weekdays: parseArr(r.weekdays) });
 const mapZone = r => r || null;
+const mapPlan = r => r && ({ ...r, rule_regions: parseArr(r.rule_regions), rule_cities: parseArr(r.rule_cities), rule_weekdays: parseArr(r.rule_weekdays) });
 
 export class D1Repo {
   constructor(db) { this.db = db; }
@@ -57,9 +58,9 @@ export class D1Repo {
   async getBanner(id) { return this.first("SELECT * FROM banners WHERE id=?", id); }
   async createBanner(b) { await this.run("INSERT INTO banners (id,tenant_id,campaign_id,creative_type,html,image_url,title,body,link_url,review_status,review_note,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", b.id, b.tenant_id, b.campaign_id, b.creative_type || "html", b.html || "", b.image_url || "", b.title || "", b.body || "", b.link_url, b.review_status || "pending", b.review_note || "", b.created_at); return b; }
   async setBannerReview(id, status, note = "") { await this.run("UPDATE banners SET review_status=?, review_note=? WHERE id=?", status, note, id); return this.getBanner(id); }
-  async listPlans() { return this.all("SELECT * FROM plans"); }
-  async createPlan(p) { await this.run("INSERT INTO plans (id,name,price_monthly,goal_impressions,description) VALUES (?,?,?,?,?)", p.id, p.name, p.price_monthly, p.goal_impressions || 0, p.description || ""); return p; }
-  async getPlan(id) { return this.first("SELECT * FROM plans WHERE id=?", id); }
+  async listPlans() { return (await this.all("SELECT * FROM plans")).map(mapPlan); }
+  async createPlan(p) { await this.run("INSERT INTO plans (id,name,price_monthly,goal_impressions,description,rule_weight,rule_freq_cap_per_day,rule_daily_cap,rule_regions,rule_cities,rule_hours,rule_weekdays) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", p.id, p.name, p.price_monthly, p.goal_impressions || 0, p.description || "", p.rule_weight || 0, p.rule_freq_cap_per_day || 0, p.rule_daily_cap || 0, JSON.stringify(p.rule_regions || []), JSON.stringify(p.rule_cities || []), p.rule_hours || "", JSON.stringify(p.rule_weekdays || [])); return p; }
+  async getPlan(id) { return mapPlan(await this.first("SELECT * FROM plans WHERE id=?", id)); }
   async listOrders() { return this.all("SELECT * FROM orders ORDER BY created_at"); }
   async createOrder(o) { await this.run("INSERT INTO orders (id,tenant_id,advertiser_id,plan_id,zone_id,starts_at,ends_at,status,campaign_id,payment_status,stripe_session_id,stripe_invoice_id,stripe_invoice_url,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)", o.id, o.tenant_id, o.advertiser_id, o.plan_id, o.zone_id, o.starts_at, o.ends_at, o.status || "applied", o.campaign_id || null, o.payment_status || "unpaid", o.stripe_session_id || "", o.stripe_invoice_id || "", o.stripe_invoice_url || "", o.created_at); return o; }
   async getOrder(id) { return this.first("SELECT * FROM orders WHERE id=?", id); }

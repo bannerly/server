@@ -1,6 +1,7 @@
 // 管理画面（サーバー描画）。配信に効く変更のたびに helpers.publishZone を呼ぶ。
 import { jstParts, today, progressOf, aggregateHour, hourKeyOf } from "./deliver.mjs";
 import { sendUsageReport, sendDailyCheckpoint, prevMonthOf } from "./report.mjs";
+import { effectivePlanRules, rulesSummary } from "./rules.mjs";
 
 export function esc(s) {
   return String(s ?? "").replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
@@ -85,7 +86,9 @@ export async function handleAdmin(req, url, repo, helpers, newId, env = {}) {
       return redirect("/admin");
     }
     if (sub === "plans") {
-      await repo.createPlan({ id: newId("plan"), name: g("name") || "無名プラン", price_monthly: parseInt(g("price_monthly") || "0", 10) || 0, goal_impressions: parseInt(g("goal_impressions") || "0", 10) || 0, description: g("description") || "" });
+      await repo.createPlan({ id: newId("plan"), name: g("name") || "無名プラン", price_monthly: parseInt(g("price_monthly") || "0", 10) || 0, goal_impressions: parseInt(g("goal_impressions") || "0", 10) || 0, description: g("description") || "",
+        rule_weight: parseInt(g("rule_weight") || "0", 10) || 0, rule_freq_cap_per_day: parseInt(g("rule_freq_cap_per_day") || "0", 10) || 0, rule_daily_cap: parseInt(g("rule_daily_cap") || "0", 10) || 0,
+        rule_regions: parseList(g("rule_regions")), rule_cities: parseList(g("rule_cities")), rule_hours: String(g("rule_hours") || "").trim(), rule_weekdays: parseList(g("rule_weekdays"), true) });
       return redirect("/admin");
     }
     if (sub === "orders" && !parts[2]) {
@@ -104,11 +107,13 @@ export async function handleAdmin(req, url, repo, helpers, newId, env = {}) {
         const plan = await repo.getPlan(o.plan_id);
         const adv = await repo.getAdvertiser(o.advertiser_id);
         const cid = newId("cmp");
+        const rules = effectivePlanRules(plan || {}, o);
         await repo.createCampaign({
           id: cid, tenant_id: o.tenant_id, advertiser_id: o.advertiser_id, zone_id: o.zone_id,
           name: `${adv ? adv.name : "広告主"}（${plan ? plan.name : "プラン"}）`, type: "contract",
-          starts_at: o.starts_at, ends_at: o.ends_at, goal_impressions: plan ? plan.goal_impressions : 0,
-          freq_cap_per_day: 0, weight: 1, daily_cap: 0, regions: [], cities: [], hours: "", weekdays: [], active: true, created_at: Date.now(),
+          starts_at: o.starts_at, ends_at: o.ends_at, goal_impressions: rules.goal_impressions,
+          freq_cap_per_day: rules.freq_cap_per_day, weight: rules.weight, daily_cap: rules.daily_cap,
+          regions: rules.regions, cities: rules.cities, hours: rules.hours, weekdays: rules.weekdays, active: true, created_at: Date.now(),
         });
         await repo.updateOrder(o.id, { status: "active", campaign_id: cid });
         await helpers.publishZone(o.zone_id);
@@ -305,6 +310,7 @@ export async function handleAdmin(req, url, repo, helpers, newId, env = {}) {
           c.hours ? `時間:${c.hours}` : null,
           c.weekdays?.length ? `曜日:${c.weekdays.join("/")}` : null,
           c.daily_cap ? `日次上限:${c.daily_cap}` : null,
+          c.freq_cap_per_day ? `FC/日:${c.freq_cap_per_day}` : null,
           c.weight && c.weight !== 1 ? `重み:${c.weight}` : null,
         ].filter(Boolean).join(" / ");
         const bcount = banners.filter(b => b.campaign_id === c.id);
@@ -329,7 +335,7 @@ export async function handleAdmin(req, url, repo, helpers, newId, env = {}) {
          <form method="post" action="/admin/orders/${o.id}/reject" style="display:inline"><button>却下</button></form>` : "";
     return `<tr><td>${esc(adv ? adv.name : o.advertiser_id)}</td><td>${esc(plan ? `${plan.name}（月${plan.price_monthly.toLocaleString()}円）` : o.plan_id)}</td><td>${esc(o.zone_id)}</td><td>${o.starts_at}〜${o.ends_at}</td><td>${esc(o.status)}</td><td>${esc(o.payment_status || "unpaid")}</td><td>${esc(o.campaign_id || "—")}</td><td>${act}</td></tr>`;
   }).join("");
-  const planRows = plans.map(p => `<tr><td>${esc(p.name)}</td><td>${p.price_monthly.toLocaleString()}円</td><td>${p.goal_impressions}</td><td>${esc(p.description || "")}</td></tr>`).join("");
+  const planRows = plans.map(p => `<tr><td>${esc(p.name)}</td><td>${p.price_monthly.toLocaleString()}円</td><td>${p.goal_impressions}</td><td>${esc(rulesSummary(effectivePlanRules(p, {})))}</td><td>${esc(p.description || "")}</td></tr>`).join("");
   const sel = (items, val, label) => items.map(i => `<option value="${esc(i[val])}">${esc(i[label])}</option>`).join("");
 
   return page("広告管理（本番構成）", `
@@ -343,7 +349,7 @@ export async function handleAdmin(req, url, repo, helpers, newId, env = {}) {
     <tr><th>広告主</th><th>プラン</th><th>枠</th><th>期間</th><th>状態</th><th>支払い</th><th>キャンペーン</th><th></th></tr>${orderRows || '<tr><td colspan="8">申込なし</td></tr>'}</table>
     <h2>プラン</h2>
     <table border="1" cellspacing="0" cellpadding="6" style="border-collapse:collapse;font-size:14px;">
-    <tr><th>名前</th><th>月額</th><th>目標imp</th><th>説明</th></tr>${planRows}</table>
+    <tr><th>名前</th><th>月額</th><th>目標imp</th><th>自動ルール（日次上限は30日換算の目安）</th><th>説明</th></tr>${planRows}</table>
 
     <hr><h2>追加フォーム</h2>
     <div style="display:grid;gap:20px;">
@@ -410,6 +416,10 @@ export async function handleAdmin(req, url, repo, helpers, newId, env = {}) {
       <label>名前 <input name="name" style="width:60%"></label>
       <label>月額 <input name="price_monthly" type="number" value="0"> 目標imp <input name="goal_impressions" type="number" value="0"></label>
       <label>説明 <input name="description" style="width:100%"></label>
+      <label>ルール上書き（0・空欄＝月額から自動） 重み <input name="rule_weight" type="number" value="0" style="width:70px"> 日次上限 <input name="rule_daily_cap" type="number" value="0" style="width:100px"> FC/日 <input name="rule_freq_cap_per_day" type="number" value="0" style="width:70px"></label>
+      <label>対象地域（カンマ区切り） <input name="rule_regions" style="width:60%"></label>
+      <label>対象市（カンマ区切り・英語表記 例 Yokohama） <input name="rule_cities" style="width:60%"></label>
+      <label>時間帯（例 18-24） <input name="rule_hours"> 曜日（0=日〜6=土） <input name="rule_weekdays"></label>
       <button>プランを追加</button>
     </form>
     </div>`);

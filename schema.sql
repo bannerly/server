@@ -72,7 +72,14 @@ CREATE TABLE IF NOT EXISTS plans (
   name TEXT NOT NULL,
   price_monthly INTEGER NOT NULL,
   goal_impressions INTEGER NOT NULL DEFAULT 0,
-  description TEXT DEFAULT ''
+  description TEXT DEFAULT '',
+  rule_weight INTEGER NOT NULL DEFAULT 0,
+  rule_freq_cap_per_day INTEGER NOT NULL DEFAULT 0,
+  rule_daily_cap INTEGER NOT NULL DEFAULT 0,
+  rule_regions TEXT NOT NULL DEFAULT '[]',
+  rule_cities TEXT NOT NULL DEFAULT '[]',
+  rule_hours TEXT NOT NULL DEFAULT '',
+  rule_weekdays TEXT NOT NULL DEFAULT '[]'
 );
 CREATE TABLE IF NOT EXISTS orders (
   id TEXT PRIMARY KEY,
