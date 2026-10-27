@@ -9,7 +9,7 @@ command -v npx >/dev/null || { echo "Node.js / npx が必要です"; exit 1; }
 WR="npx wrangler"
 
 echo "==> D1 データベースを作成します"
-$WR d1 create slotly || true
+$WR d1 create bannerly || true
 DB_ID=$($WR d1 list --json 2>/dev/null | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const a=JSON.parse(s);const db=a.find(x=>x.name==='slotly');console.log(db?db.uuid:'')})")
 [ -n "$DB_ID" ] || { echo "D1 の ID を取得できませんでした。wrangler.toml を手動で確認してください"; exit 1; }
 
@@ -31,7 +31,7 @@ fi
 rm -f wrangler.toml.bak
 
 echo "==> スキーマを適用します"
-$WR d1 execute slotly --remote --file=schema.sql
+$WR d1 execute bannerly --remote --file=schema.sql
 
 echo "==> 管理トークン（ADMIN_TOKEN）を設定します"
 $WR secret put ADMIN_TOKEN

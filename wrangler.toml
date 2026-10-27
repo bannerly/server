@@ -1,11 +1,11 @@
-name = "slotly"
+name = "bannerly"
 main = "src/worker.mjs"
 compatibility_date = "2026-10-01"
 
 # デプロイ前に wrangler で作成し、ID を差し替える（README 参照）
 [[d1_databases]]
 binding = "DB"
-database_name = "slotly"
+database_name = "bannerly"
 database_id = "REPLACE_ME"
 
 [[kv_namespaces]]

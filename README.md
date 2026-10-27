@@ -68,13 +68,13 @@ bash scripts/setup.sh
 
 1. D1 データベース、KV 名前空間、Queues を作成し、`wrangler.toml` の ID を差し替えます
    ```sh
-   npx wrangler d1 create slotly
+   npx wrangler d1 create bannerly
    npx wrangler kv namespace create SNAP
    npx wrangler queues create ad-events
    ```
 2. スキーマを適用します
    ```sh
-   npx wrangler d1 execute slotly --remote --file=schema.sql
+   npx wrangler d1 execute bannerly --remote --file=schema.sql
    ```
 3. 管理トークンを設定します
    ```sh
