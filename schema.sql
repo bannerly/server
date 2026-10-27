@@ -4,6 +4,9 @@ CREATE TABLE IF NOT EXISTS tenants (
   name TEXT NOT NULL,
   stripe_account_id TEXT NOT NULL DEFAULT '',
   stripe_charges_enabled INTEGER NOT NULL DEFAULT 0,
+  line_channel_id TEXT NOT NULL DEFAULT '',
+  line_channel_secret TEXT NOT NULL DEFAULT '',
+  line_access_token TEXT NOT NULL DEFAULT '',
   created_at INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS users (

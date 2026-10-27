@@ -22,7 +22,7 @@ export class D1Repo {
   async updateTenant(id, patch) {
     const cur = await this.getTenant(id); if (!cur) return null;
     const n = { ...cur, ...patch };
-    await this.run("UPDATE tenants SET name=?, stripe_account_id=?, stripe_charges_enabled=? WHERE id=?", n.name, n.stripe_account_id || "", n.stripe_charges_enabled ? 1 : 0, id);
+    await this.run("UPDATE tenants SET name=?, stripe_account_id=?, stripe_charges_enabled=?, line_channel_id=?, line_channel_secret=?, line_access_token=? WHERE id=?", n.name, n.stripe_account_id || "", n.stripe_charges_enabled ? 1 : 0, n.line_channel_id || "", n.line_channel_secret || "", n.line_access_token || "", id);
     return n;
   }
   async createUser(u) { await this.run("INSERT INTO users (id,tenant_id,email,role,token_hash,created_at) VALUES (?,?,?,?,?,?)", u.id, u.tenant_id || null, u.email, u.role || "tenant_admin", u.token_hash || "", u.created_at); return u; }

@@ -5,7 +5,7 @@ import { esc } from "./admin.mjs";
 import { today } from "./deliver.mjs";
 import { stripeEnabled, createConnectAccount, createAccountLink, createOrderCheckout, sendOrderInvoice, createConnectWebhookEndpoint } from "./stripe.mjs";
 
-const RESERVED = new Set(["admin", "signup", "tenant", "ad", "tag", "imp", "click", "demo", "stripe", "api"]);
+const RESERVED = new Set(["admin", "signup", "tenant", "ad", "tag", "imp", "click", "demo", "stripe", "api", "line"]);
 const slugOk = s => /^[a-z0-9][a-z0-9-]{2,31}$/.test(s) && !RESERVED.has(s);
 const plus30 = () => new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
 
@@ -138,6 +138,13 @@ export async function handleTenant(req, url, repo, helpers, newId, env) {
         return redirect(link.url);
       } catch (e) { return new Response(`Stripe 接続エラー: ${esc(e.message)}`, { status: 502 }); }
     }
+    if (parts[1] === "line" && parts[2] === "settings") {
+      const patch = { line_channel_id: g("line_channel_id") || "" };
+      if (g("line_channel_secret")) patch.line_channel_secret = g("line_channel_secret");
+      if (g("line_access_token")) patch.line_access_token = g("line_access_token");
+      await repo.updateTenant(tid, patch);
+      return redirect("/tenant");
+    }
     if (parts[1] === "orders" && parts[2] && (parts[3] === "checkout" || parts[3] === "invoice")) {
       const o = await repo.getOrder(parts[2]);
       if (!o || o.tenant_id !== tid) return new Response("unknown order", { status: 404 });
@@ -184,11 +191,22 @@ export async function handleTenant(req, url, repo, helpers, newId, env) {
        <p style="font-size:13px;color:#555;">支払い・請求書・接続状態の自動反映に必要です。作成時に表示される署名シークレットを <code>STRIPE_WEBHOOK_SECRET</code> に設定してください。</p>`
     : `<form method="post" action="/tenant/stripe/connect"><button>Stripe を接続する（Direct charges）</button></form>
        <p style="font-size:13px;color:#555;">広告主への請求は、あなたの Stripe アカウントから直接行われます（プラットフォームは資金を預かりません）。請求書の発行・メール送信も Stripe から行えます。</p>`;
+  const lineBox = `
+    <p style="font-size:13px;">チャネル: ${tenant.line_channel_id ? `<code>${esc(tenant.line_channel_id)}</code>` : "未設定"} / シークレット: ${tenant.line_channel_secret ? "設定済み" : "未設定"} / トークン: ${tenant.line_access_token ? "設定済み" : "未設定"}</p>
+    <p style="font-size:13px;color:#555;">Webhook URL: <code>${esc(env.PUBLIC_BASE_URL || "")}/line/webhook/${esc(tid)}</code>（LINE Developers の Webhook URL に設定してください）</p>
+    <form method="post" action="/tenant/line/settings" style="display:grid;gap:6px;max-width:560px;">
+      <label>チャネル ID <input name="line_channel_id" value="${esc(tenant.line_channel_id || "")}" style="width:60%"></label>
+      <label>チャネルシークレット <input name="line_channel_secret" type="password" placeholder="${tenant.line_channel_secret ? "設定済み（変更時のみ入力）" : ""}" style="width:60%"></label>
+      <label>チャネルアクセストークン <input name="line_access_token" type="password" placeholder="${tenant.line_access_token ? "設定済み（変更時のみ入力）" : ""}" style="width:60%"></label>
+      <button>LINE 設定を保存</button>
+    </form>
+    <p style="font-size:13px;color:#555;">友だち追加などのイベントは件数だけを記録します（メッセージ本文・ユーザー ID は保存しません）。LIFF の到達計測は、ポータル画面から <code>/line/open?c=&lt;キャンペーンID&gt;</code> を呼ぶ形です。</p>`;
   return page("テナントコンソール", `
     <h1>テナントコンソール</h1>
     <p>テナント: <strong>${esc(tenant.name)}</strong>（<code>${esc(tid)}</code>）</p>
     ${url.searchParams.get("msg") === "invoice_sent" ? '<p style="background:#dff3e4;padding:8px;">請求書を送信しました。</p>' : ""}
     <h2>Stripe（決済・請求）</h2>${stripeBox}
+    <h2>LINE（計測・連携）</h2>${lineBox}
     <h2>枠</h2>
     <table border="1" cellspacing="0" cellpadding="6" style="border-collapse:collapse;font-size:14px;">
     <tr><th>名前</th><th>ID</th><th>サイズ</th><th></th><th>配信URL</th></tr>${zoneRows || '<tr><td colspan="5">枠がありません</td></tr>'}</table>

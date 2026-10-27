@@ -7,6 +7,7 @@ import { handleAdmin, esc } from "./admin.mjs";
 import { handleSignup, handleTenant } from "./tenant.mjs";
 import { sendUsageReport, sendDailyCheckpoint, sendMissedReports, prevMonthOf } from "./report.mjs";
 import { verifyWebhook } from "./stripe.mjs";
+import { verifyLineSignature, recordLineWebhookEvents, recordLineOpen, withLineAttribution } from "./line.mjs";
 
 const GIF = new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0x01, 0x00, 0x01, 0x00, 0x80, 0x00, 0x00, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x21, 0xf9, 0x04, 0x01, 0x00, 0x00, 0x00, 0x00, 0x2c, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x02, 0x02, 0x44, 0x01, 0x00, 0x3b]);
 let localRepo = null;
@@ -132,9 +133,34 @@ export default {
       if (d) {
         const banner = await repo.getBanner(d.banner_id);
         if (banner) dest = banner.link_url || "/";
+        dest = withLineAttribution(dest, d);
         if (!isBot(req)) await emitEvent(env, repo, { id: newId("ev"), ts: Date.now(), kind: "click", tenant_id: d.tenant_id, zone_id: d.zone_id, campaign_id: d.campaign_id, banner_id: d.banner_id });
       }
       return new Response(null, { status: 302, headers: { location: dest } });
+    }
+
+    // LINE Webhook（テナントごとのチャネルシークレットで署名検証）
+    if (parts[0] === "line" && parts[1] === "webhook" && parts[2] && req.method === "POST") {
+      const tenant = await repo.getTenant(parts[2]);
+      if (!tenant || !tenant.line_channel_secret) return new Response("line channel not configured", { status: 404 });
+      const raw = await req.text();
+      if (!(await verifyLineSignature(tenant.line_channel_secret, raw, req.headers.get("x-line-signature")))) {
+        return new Response("invalid signature", { status: 400 });
+      }
+      let body = {};
+      try { body = JSON.parse(raw); } catch { return new Response("bad json", { status: 400 }); }
+      const emitRepo = { insertEvent: ev => emitEvent(env, repo, ev), getCampaign: id => repo.getCampaign(id) };
+      await recordLineWebhookEvents(emitRepo, tenant, body, newId);
+      return Response.json({ received: true });
+    }
+    // LIFF 到達ビーコン（ポータル画面が開かれた実到達をコンバージョンとして記録）
+    if (parts[0] === "line" && parts[1] === "open") {
+      if (!isBot(req)) {
+        const emitRepo = { insertEvent: ev => emitEvent(env, repo, ev), getCampaign: id => repo.getCampaign(id) };
+        const ev = await recordLineOpen(emitRepo, url.searchParams.get("c") || "", newId).catch(() => null);
+        if (url.searchParams.get("format") === "json") return Response.json({ recorded: !!ev });
+      }
+      return new Response(GIF, { headers: { "content-type": "image/gif", "cache-control": "no-store" } });
     }
 
     if (url.pathname === "/signup") return handleSignup(req, url, repo, newId, env);

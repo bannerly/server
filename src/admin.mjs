@@ -217,29 +217,33 @@ export async function handleAdmin(req, url, repo, helpers, newId, env = {}) {
       const ce = evs.filter(e => e.campaign_id === c.id);
       const imp = ce.filter(e => e.kind === "imp").length;
       const click = ce.filter(e => e.kind === "click").length;
-      return { zone: c.zone_id, campaign: c.name, type: c.type, imp, click, share: totalImp ? (imp / totalImp * 100).toFixed(1) + "%" : "—", ctr: imp ? (click / imp * 100).toFixed(2) + "%" : "—" };
+      const lineOpen = ce.filter(e => e.kind === "line_open").length;
+      return { zone: c.zone_id, campaign: c.name, type: c.type, imp, click, lineOpen, share: totalImp ? (imp / totalImp * 100).toFixed(1) + "%" : "—", ctr: imp ? (click / imp * 100).toFixed(2) + "%" : "—" };
     });
+    const totalLineOpen = evs.filter(e => e.kind === "line_open").length;
+    const tenantFollows = inMonth.filter(e => e.kind === "line_follow" && e.tenant_id === adv.tenant_id).length;
     if (url.searchParams.get("format") === "csv") {
-      const csv = ["advertiser,month,zone,campaign,type,impressions,share,clicks,ctr",
-        ...rows.map(r => [`"${adv.name.replace(/"/g, '""')}"`, month, r.zone, `"${r.campaign.replace(/"/g, '""')}"`, r.type, r.imp, r.share, r.click, r.ctr].join(",")),
-        `"${adv.name.replace(/"/g, '""')}",${month},,合計,,${totalImp},,${totalClick},`].join("\n");
+      const csv = ["advertiser,month,zone,campaign,type,impressions,share,clicks,ctr,line_opens",
+        ...rows.map(r => [`"${adv.name.replace(/"/g, '""')}"`, month, r.zone, `"${r.campaign.replace(/"/g, '""')}"`, r.type, r.imp, r.share, r.click, r.ctr, r.lineOpen].join(",")),
+        `"${adv.name.replace(/"/g, '""')}",${month},,合計,,${totalImp},,${totalClick},,${totalLineOpen}`].join("\n");
       return new Response(csv, { headers: { "content-type": "text/csv; charset=utf-8", "content-disposition": `attachment; filename=monthly-${month}-${advId}.csv` } });
     }
     const dayRows = [...new Set(evs.map(e => jstParts(e.ts).date))].sort().map(d => {
       const de = evs.filter(e => jstParts(e.ts).date === d);
       return `<tr><td>${d}</td><td>${de.filter(e => e.kind === "imp").length}</td><td>${de.filter(e => e.kind === "click").length}</td></tr>`;
     }).join("");
-    const tbl = rows.map(r => `<tr><td>${esc(r.zone)}</td><td>${esc(r.campaign)}</td><td>${esc(r.type)}</td><td>${r.imp}</td><td>${r.share}</td><td>${r.click}</td><td>${r.ctr}</td></tr>`).join("");
+    const tbl = rows.map(r => `<tr><td>${esc(r.zone)}</td><td>${esc(r.campaign)}</td><td>${esc(r.type)}</td><td>${r.imp}</td><td>${r.share}</td><td>${r.click}</td><td>${r.ctr}</td><td>${r.lineOpen}</td></tr>`).join("");
     return page(`月次レポート ${month}`, `
       <h1>月次レポート</h1>
       <p>広告主: <strong>${esc(adv.name)}</strong> ／ 対象月: <strong>${month}</strong>（${from}〜${to}） ／ 発行日: ${today()}</p>
       <p><a href="/admin/monthly?month=${month}">広告主一覧へ</a> ・ <a href="/admin/monthly?month=${month}&advertiser=${advId}&format=csv">CSVダウンロード</a> ・ <a href="/admin">管理画面へ</a></p>
       <h2>合計</h2>
-      <p style="font-size:18px;">表示回数 <strong>${totalImp}</strong> 回 ／ クリック <strong>${totalClick}</strong> 回 ／ CTR <strong>${totalImp ? (totalClick / totalImp * 100).toFixed(2) : "0.00"}%</strong></p>
+      <p style="font-size:18px;">表示回数 <strong>${totalImp}</strong> 回 ／ クリック <strong>${totalClick}</strong> 回 ／ CTR <strong>${totalImp ? (totalClick / totalImp * 100).toFixed(2) : "0.00"}%</strong> ／ LINE到達 <strong>${totalLineOpen}</strong> 回</p>
+      <p style="font-size:13px;color:#555;">友だち追加（このテナント全体・キャンペーン帰属なし）: ${tenantFollows} 件</p>
       <h2>キャンペーン別内訳</h2>
       <table border="1" cellspacing="0" cellpadding="6" style="border-collapse:collapse;font-size:14px;">
-      <tr><th>枠</th><th>キャンペーン</th><th>種別</th><th>表示回数</th><th>占有率</th><th>クリック</th><th>CTR</th></tr>${tbl || '<tr><td colspan="7">対象キャンペーンなし</td></tr>'}
-      <tr><td colspan="3"><strong>合計</strong></td><td><strong>${totalImp}</strong></td><td>—</td><td><strong>${totalClick}</strong></td><td>—</td></tr></table>
+      <tr><th>枠</th><th>キャンペーン</th><th>種別</th><th>表示回数</th><th>占有率</th><th>クリック</th><th>CTR</th><th>LINE到達</th></tr>${tbl || '<tr><td colspan="8">対象キャンペーンなし</td></tr>'}
+      <tr><td colspan="3"><strong>合計</strong></td><td><strong>${totalImp}</strong></td><td>—</td><td><strong>${totalClick}</strong></td><td>—</td><td><strong>${totalLineOpen}</strong></td></tr></table>
       <h2>日別</h2>
       <table border="1" cellspacing="0" cellpadding="6" style="border-collapse:collapse;font-size:14px;">
       <tr><th>日付</th><th>表示回数</th><th>クリック</th></tr>${dayRows || '<tr><td colspan="3">データなし</td></tr>'}</table>`);
