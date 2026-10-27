@@ -16,7 +16,7 @@ export function hourKeyOf(ts) {
 }
 export function today() { return jstParts().date; }
 
-function hourInRanges(hour, spec) {
+export function hourInRanges(hour, spec) {
   if (!spec) return true;
   return spec.split(",").some(r => {
     const [a, b] = r.split("-").map(x => parseInt(x, 10));

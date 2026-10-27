@@ -59,6 +59,11 @@ function seed() {
       { id: "plan-top", name: "トップ", price_monthly: 100000, goal_impressions: 300000, description: "トップ面の看板枠（目標impは仮置き・要確定）" },
     ],
     orders: [],
+    line_queues: [],
+    line_route_rules: [],
+    line_threads: [],
+    line_messages: [],
+    line_attribution: [],
     events: [],
     counters_total: [],
     counters_daily: [],
@@ -191,6 +196,28 @@ export class LocalRepo {
     this.save(db);
   }
   async listStatsHourly() { return this.load().stats_hourly; }
+  async listLineQueues(tenantId) { const a = this.load().line_queues || []; return tenantId ? a.filter(x => x.tenant_id === tenantId) : a; }
+  async createLineQueue(q) { const db = this.load(); db.line_queues = db.line_queues || []; db.line_queues.push(q); this.save(db); return q; }
+  async getLineQueue(id) { return (this.load().line_queues || []).find(q => q.id === id) || null; }
+  async updateLineQueue(id, patch) { const db = this.load(); const q = (db.line_queues || []).find(x => x.id === id); if (q) Object.assign(q, patch); this.save(db); return q; }
+  async listLineRouteRules(tenantId) { const a = this.load().line_route_rules || []; return tenantId ? a.filter(x => x.tenant_id === tenantId) : a; }
+  async createLineRouteRule(r) { const db = this.load(); db.line_route_rules = db.line_route_rules || []; db.line_route_rules.push(r); this.save(db); return r; }
+  async deleteLineRouteRule(id) { const db = this.load(); db.line_route_rules = (db.line_route_rules || []).filter(r => r.id !== id); this.save(db); }
+  async getLineThreadByUser(tenantId, userId) { return (this.load().line_threads || []).find(t => t.tenant_id === tenantId && t.line_user_id === userId) || null; }
+  async createLineThread(t) { const db = this.load(); db.line_threads = db.line_threads || []; db.line_threads.push(t); this.save(db); return t; }
+  async getLineThread(id) { return (this.load().line_threads || []).find(t => t.id === id) || null; }
+  async listLineThreads(tenantId) { return (this.load().line_threads || []).filter(t => t.tenant_id === tenantId).sort((a, b) => (b.updated_at || 0) - (a.updated_at || 0)); }
+  async updateLineThread(id, patch) { const db = this.load(); const t = (db.line_threads || []).find(x => x.id === id); if (t) Object.assign(t, patch); this.save(db); return t; }
+  async createLineMessage(m) { const db = this.load(); db.line_messages = db.line_messages || []; db.line_messages.push(m); this.save(db); return m; }
+  async listLineMessages(threadId) { return (this.load().line_messages || []).filter(m => m.thread_id === threadId).sort((a, b) => a.ts - b.ts); }
+  async getLineAttribution(tenantId, userId) { return (this.load().line_attribution || []).find(a => a.tenant_id === tenantId && a.line_user_id === userId) || null; }
+  async setLineAttribution(tenantId, userId, campaignId) {
+    const db = this.load(); db.line_attribution = db.line_attribution || [];
+    const ex = db.line_attribution.find(a => a.tenant_id === tenantId && a.line_user_id === userId);
+    if (ex) { ex.campaign_id = campaignId; ex.updated_at = Date.now(); }
+    else db.line_attribution.push({ tenant_id: tenantId, line_user_id: userId, campaign_id: campaignId, updated_at: Date.now() });
+    this.save(db);
+  }
   async putSnapshot(zoneId, snap) { const db = this.load(); db.snapshots[zoneId] = snap; this.save(db); }
   async getSnapshot(zoneId) { return this.load().snapshots[zoneId] || null; }
   async putDelivery(token, d) { const db = this.load(); db.deliveries[token] = d; this.save(db); }

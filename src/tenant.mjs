@@ -4,6 +4,7 @@
 import { esc } from "./admin.mjs";
 import { today } from "./deliver.mjs";
 import { stripeEnabled, createConnectAccount, createAccountLink, createOrderCheckout, sendOrderInvoice, createConnectWebhookEndpoint } from "./stripe.mjs";
+import { sendLineReply } from "./line-routing.mjs";
 
 const RESERVED = new Set(["admin", "signup", "tenant", "ad", "tag", "imp", "click", "demo", "stripe", "api", "line"]);
 const slugOk = s => /^[a-z0-9][a-z0-9-]{2,31}$/.test(s) && !RESERVED.has(s);
@@ -145,6 +146,51 @@ export async function handleTenant(req, url, repo, helpers, newId, env) {
       await repo.updateTenant(tid, patch);
       return redirect("/tenant");
     }
+    if (parts[1] === "line" && parts[2] === "queues" && !parts[3]) {
+      await repo.createLineQueue({ id: newId("q"), tenant_id: tid, name: g("name") || "無名キュー", advertiser_id: g("advertiser_id") || "", area: g("area") || "", available: g("available") !== "0", created_at: Date.now() });
+      return redirect("/tenant/line/queues");
+    }
+    if (parts[1] === "line" && parts[2] === "queues" && parts[3] && parts[4] === "update") {
+      const q = await repo.getLineQueue(parts[3]);
+      if (!q || q.tenant_id !== tid) return new Response("unknown queue", { status: 404 });
+      await repo.updateLineQueue(q.id, { name: g("name") || q.name, advertiser_id: g("advertiser_id") || "", area: g("area") || "", available: g("available") !== "0" });
+      return redirect("/tenant/line/queues");
+    }
+    if (parts[1] === "line" && parts[2] === "rules" && !parts[3]) {
+      const q = await repo.getLineQueue(g("queue_id") || "");
+      if (!q || q.tenant_id !== tid) return new Response("unknown queue", { status: 400 });
+      await repo.createLineRouteRule({ id: newId("lr"), tenant_id: tid, queue_id: q.id, priority: parseInt(g("priority") || "100", 10) || 100, campaign_id: g("campaign_id") || "", area: g("area") || "", hours: g("hours") || "", keywords: g("keywords") || "", active: true, created_at: Date.now() });
+      return redirect("/tenant/line/queues");
+    }
+    if (parts[1] === "line" && parts[2] === "rules" && parts[3] && parts[4] === "delete") {
+      const rules = await repo.listLineRouteRules(tid);
+      if (rules.some(r => r.id === parts[3])) await repo.deleteLineRouteRule(parts[3]);
+      return redirect("/tenant/line/queues");
+    }
+    if (parts[1] === "line" && parts[2] === "threads" && parts[3]) {
+      const th = await repo.getLineThread(parts[3]);
+      if (!th || th.tenant_id !== tid) return new Response("unknown thread", { status: 404 });
+      if (parts[4] === "reply") {
+        const text = String(g("text") || "").trim();
+        if (!text) return redirect(`/tenant/line/threads/${th.id}`);
+        try {
+          await sendLineReply(repo, tenant, th, text, newId, env);
+        } catch (e) {
+          return page("送信エラー", `<h1>返信を送信できませんでした</h1><p>${esc(e.message)}</p><p><a href="/tenant/line/threads/${th.id}">スレッドへ戻る</a></p>`);
+        }
+        return redirect(`/tenant/line/threads/${th.id}`);
+      }
+      if (parts[4] === "assign") {
+        const qid = g("queue_id") || "";
+        if (qid) { const q = await repo.getLineQueue(qid); if (!q || q.tenant_id !== tid) return new Response("unknown queue", { status: 400 }); }
+        await repo.updateLineThread(th.id, { queue_id: qid, updated_at: Date.now() });
+        return redirect(`/tenant/line/threads/${th.id}`);
+      }
+      if (parts[4] === "status") {
+        await repo.updateLineThread(th.id, { status: th.status === "open" ? "closed" : "open", updated_at: Date.now() });
+        return redirect(`/tenant/line/threads/${th.id}`);
+      }
+    }
     if (parts[1] === "orders" && parts[2] && (parts[3] === "checkout" || parts[3] === "invoice")) {
       const o = await repo.getOrder(parts[2]);
       if (!o || o.tenant_id !== tid) return new Response("unknown order", { status: 404 });
@@ -163,6 +209,119 @@ export async function handleTenant(req, url, repo, helpers, newId, env) {
       } catch (e) { return new Response(`Stripe エラー: ${esc(e.message)}`, { status: 502 }); }
     }
     return new Response("unknown tenant action", { status: 404 });
+  }
+
+  // --- LINE 受信箱 / キュー・ルール管理（サブページ） ---
+  const fmtTs = ts => new Date(ts || 0).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  if (parts[1] === "line" && parts[2] === "inbox") {
+    const [threads, queues, camps] = await Promise.all([repo.listLineThreads(tid), repo.listLineQueues(tid), repo.listCampaigns()]);
+    const qName = id => { const q = queues.find(x => x.id === id); return q ? q.name : (id ? "(削除済みキュー)" : "未割当"); };
+    const cName = id => { const c = camps.find(x => x.id === id && x.tenant_id === tid); return c ? c.name : ""; };
+    const qFilter = url.searchParams.get("queue") || "";
+    const sFilter = url.searchParams.get("status") || "";
+    const shown = threads.filter(t => {
+      if (qFilter === "__none" && t.queue_id) return false;
+      if (qFilter && qFilter !== "__none" && t.queue_id !== qFilter) return false;
+      if (sFilter && t.status !== sFilter) return false;
+      return true;
+    });
+    const rows = [];
+    for (const t of shown) {
+      const msgs = await repo.listLineMessages(t.id);
+      const last = msgs[msgs.length - 1];
+      const preview = last ? (last.direction === "out" ? "↪ " : "") + (last.body || `（${last.msg_type || "その他"}）`) : "";
+      rows.push(`<tr><td>${fmtTs(t.updated_at)}</td><td><code>${esc(t.line_user_id.slice(0, 12))}…</code></td><td>${esc(qName(t.queue_id))}</td><td>${t.status === "open" ? "対応中" : "完了"}</td><td>${esc(cName(t.campaign_id))}</td><td style="max-width:360px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(preview)}</td><td><a href="/tenant/line/threads/${t.id}">開く</a></td></tr>`);
+    }
+    const qOpts = [`<option value="">すべて</option>`, `<option value="__none" ${qFilter === "__none" ? "selected" : ""}>未割当</option>`, ...queues.map(q => `<option value="${q.id}" ${qFilter === q.id ? "selected" : ""}>${esc(q.name)}</option>`)].join("");
+    const bodyRows = rows;
+    return page("LINE 受信箱", `
+      <h1>LINE 受信箱</h1>
+      <p>テナント: <strong>${esc(tenant.name)}</strong> / <a href="/tenant">コンソール</a> / <a href="/tenant/line/queues">キュー・ルール設定</a></p>
+      <p style="font-size:13px;color:#555;">公式アカウントに届いたメッセージは、ルールで担当キューに割り当てられます。返信はこの受信箱から、公式アカウントとして送信されます（店舗の個人 LINE へは転送されません）。</p>
+      <form method="get" action="/tenant/line/inbox" style="display:flex;gap:12px;align-items:end;flex-wrap:wrap;">
+        <label>キュー <select name="queue">${qOpts}</select></label>
+        <label>状態 <select name="status"><option value="">すべて</option><option value="open" ${sFilter === "open" ? "selected" : ""}>対応中</option><option value="closed" ${sFilter === "closed" ? "selected" : ""}>完了</option></select></label>
+        <button>絞り込む</button>
+      </form>
+      <table border="1" cellspacing="0" cellpadding="6" style="border-collapse:collapse;font-size:14px;margin-top:12px;">
+      <tr><th>最終更新</th><th>ユーザー</th><th>担当キュー</th><th>状態</th><th>帰属</th><th>最終メッセージ</th><th></th></tr>${bodyRows.join("") || '<tr><td colspan="7">スレッドがありません</td></tr>'}</table>`);
+  }
+  if (parts[1] === "line" && parts[2] === "threads" && parts[3]) {
+    const th = await repo.getLineThread(parts[3]);
+    if (!th || th.tenant_id !== tid) return new Response("unknown thread", { status: 404 });
+    const [msgs, queues] = await Promise.all([repo.listLineMessages(th.id), repo.listLineQueues(tid)]);
+    const bubbles = msgs.map(m => m.direction === "out"
+      ? `<div style="text-align:right;margin:6px 0;"><span style="display:inline-block;background:#dff3e4;border-radius:10px;padding:8px 10px;max-width:75%;text-align:left;white-space:pre-wrap;">${esc(m.body || `（${m.msg_type}）`)}</span><div style="font-size:11px;color:#888;">${fmtTs(m.ts)} 送信</div></div>`
+      : `<div style="margin:6px 0;"><span style="display:inline-block;background:#f0f0f0;border-radius:10px;padding:8px 10px;max-width:75%;white-space:pre-wrap;">${esc(m.body || `（${m.msg_type || "その他"}: 内容は保存されません）`)}</span><div style="font-size:11px;color:#888;">${fmtTs(m.ts)} 受信</div></div>`).join("");
+    const qOpts = [`<option value="">未割当</option>`, ...queues.map(q => `<option value="${q.id}" ${th.queue_id === q.id ? "selected" : ""}>${esc(q.name)}${q.available ? "" : "（停止中）"}</option>`)].join("");
+    const curQ = queues.find(q => q.id === th.queue_id);
+    return page("LINE スレッド", `
+      <h1>スレッド</h1>
+      <p><a href="/tenant/line/inbox">受信箱へ戻る</a></p>
+      <p style="font-size:13px;">ユーザー: <code>${esc(th.line_user_id)}</code>（チャネル単位の仮名 ID）<br>
+      担当キュー: <strong>${esc(curQ ? curQ.name : "未割当")}</strong> / 状態: ${th.status === "open" ? "対応中" : "完了"}${th.campaign_id ? `<br>帰属キャンペーン: <code>${esc(th.campaign_id)}</code>` : ""}</p>
+      <div style="border:1px solid #ddd;border-radius:8px;padding:12px;background:#fff;">${bubbles || '<p style="color:#888;">メッセージがありません</p>'}</div>
+      <form method="post" action="/tenant/line/threads/${th.id}/reply" style="display:grid;gap:6px;margin-top:12px;">
+        <strong>返信する（公式アカウントとして送信）</strong>
+        <textarea name="text" rows="3" required style="width:100%"></textarea>
+        <button>送信</button>
+      </form>
+      <div style="display:flex;gap:16px;margin-top:16px;flex-wrap:wrap;">
+        <form method="post" action="/tenant/line/threads/${th.id}/assign" style="display:flex;gap:6px;align-items:center;">
+          <label>担当キュー <select name="queue_id">${qOpts}</select></label><button>割り当てる</button>
+        </form>
+        <form method="post" action="/tenant/line/threads/${th.id}/status">
+          <button>${th.status === "open" ? "対応を完了にする" : "対応中に戻す"}</button>
+        </form>
+      </div>`);
+  }
+  if (parts[1] === "line" && parts[2] === "queues") {
+    const [queues, rules, camps, advs] = await Promise.all([repo.listLineQueues(tid), repo.listLineRouteRules(tid), repo.listCampaigns(), repo.listAdvertisers(tid)]);
+    const myCamps = camps.filter(c => c.tenant_id === tid);
+    const advName = id => { const a = advs.find(x => x.id === id); return a ? a.name : ""; };
+    const campName = id => { const c = myCamps.find(x => x.id === id); return c ? c.name : id; };
+    const qRows = queues.map(q => `
+      <tr><td>${esc(q.name)}</td><td>${esc(advName(q.advertiser_id))}</td><td>${esc(q.area)}</td><td>${q.available ? "対応可" : "停止中"}</td>
+      <td><form method="post" action="/tenant/line/queues/${q.id}/update" style="display:flex;gap:4px;flex-wrap:wrap;">
+        <input name="name" value="${esc(q.name)}" size="12"><input name="area" value="${esc(q.area)}" size="10" placeholder="エリア">
+        <select name="advertiser_id"><option value="">（店舗なし）</option>${advs.map(a => `<option value="${a.id}" ${q.advertiser_id === a.id ? "selected" : ""}>${esc(a.name)}</option>`).join("")}</select>
+        <select name="available"><option value="1" ${q.available ? "selected" : ""}>対応可</option><option value="0" ${q.available ? "" : "selected"}>停止</option></select>
+        <button>更新</button></form></td></tr>`).join("");
+    const qOpts = queues.map(q => `<option value="${q.id}">${esc(q.name)}</option>`).join("");
+    const rRows = rules.map(r => {
+      const q = queues.find(x => x.id === r.queue_id);
+      const cond = [r.campaign_id ? `帰属:${esc(campName(r.campaign_id))}` : null, r.area ? `エリア:${esc(r.area)}` : null, r.hours ? `時間帯:${esc(r.hours)}` : null, r.keywords ? `KW:${esc(r.keywords)}` : null].filter(Boolean).join(" / ") || "（条件なし）";
+      return `<tr><td>${r.priority}</td><td>${esc(q ? q.name : "(削除済み)")}</td><td>${cond}</td><td>${r.active ? "有効" : "無効"}</td>
+      <td><form method="post" action="/tenant/line/rules/${r.id}/delete"><button>削除</button></form></td></tr>`;
+    }).join("");
+    return page("LINE キュー・ルール設定", `
+      <h1>LINE キュー・ルール設定</h1>
+      <p>テナント: <strong>${esc(tenant.name)}</strong> / <a href="/tenant">コンソール</a> / <a href="/tenant/line/inbox">受信箱</a></p>
+      <h2>担当キュー</h2>
+      <table border="1" cellspacing="0" cellpadding="6" style="border-collapse:collapse;font-size:14px;">
+      <tr><th>名前</th><th>店舗・事業者</th><th>エリア</th><th>対応可否</th><th>編集</th></tr>${qRows || '<tr><td colspan="5">キューがありません</td></tr>'}</table>
+      <form method="post" action="/tenant/line/queues" style="display:grid;gap:6px;max-width:560px;margin-top:12px;">
+        <strong>キューの追加</strong>
+        <label>名前 <input name="name" style="width:60%"></label>
+        <label>店舗・事業者 <select name="advertiser_id"><option value="">（なし）</option>${advs.map(a => `<option value="${a.id}">${esc(a.name)}</option>`).join("")}</select></label>
+        <label>エリア <input name="area" placeholder="例: 横浜市（帰属キャンペーンの地域と照合）" style="width:60%"></label>
+        <label>対応可否 <select name="available"><option value="1">対応可</option><option value="0">停止</option></select></label>
+        <button>キューを追加</button>
+      </form>
+      <h2>振り分けルール</h2>
+      <p style="font-size:13px;color:#555;">優先度が小さい順に評価し、条件がすべて一致して割当先が「対応可」の最初のルールを採用します。どれにも一致しない場合は、エリアが一致する対応可キュー→最も古い対応可キューの順に割り当てます。エリアは「帰属キャンペーンの配信地域（都道府県・市区町村）」と照合します。時間帯は JST で <code>9-18,22-24</code> 形式、キーワードはカンマ区切り（いずれか含めば一致）です。</p>
+      <table border="1" cellspacing="0" cellpadding="6" style="border-collapse:collapse;font-size:14px;">
+      <tr><th>優先度</th><th>割当先</th><th>条件</th><th>状態</th><th></th></tr>${rRows || '<tr><td colspan="5">ルールがありません</td></tr>'}</table>
+      <form method="post" action="/tenant/line/rules" style="display:grid;gap:6px;max-width:560px;margin-top:12px;">
+        <strong>ルールの追加</strong>
+        <label>優先度 <input name="priority" type="number" value="100" style="width:80px"></label>
+        <label>割当先キュー <select name="queue_id">${qOpts}</select></label>
+        <label>帰属キャンペーン <select name="campaign_id"><option value="">（指定なし）</option>${myCamps.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join("")}</select></label>
+        <label>エリア <input name="area" placeholder="例: 神奈川県 / 横浜市" style="width:60%"></label>
+        <label>時間帯 <input name="hours" placeholder="例: 9-18,22-24" style="width:60%"></label>
+        <label>キーワード <input name="keywords" placeholder="例: 予約,料金" style="width:60%"></label>
+        <button>ルールを追加</button>
+      </form>`);
   }
 
   const [zones, campaigns, orders, plans, advertisers] = await Promise.all([
@@ -200,7 +359,8 @@ export async function handleTenant(req, url, repo, helpers, newId, env) {
       <label>チャネルアクセストークン <input name="line_access_token" type="password" placeholder="${tenant.line_access_token ? "設定済み（変更時のみ入力）" : ""}" style="width:60%"></label>
       <button>LINE 設定を保存</button>
     </form>
-    <p style="font-size:13px;color:#555;">友だち追加などのイベントは件数だけを記録します（メッセージ本文・ユーザー ID は保存しません）。LIFF の到達計測は、ポータル画面から <code>/line/open?c=&lt;キャンペーンID&gt;</code> を呼ぶ形です。</p>`;
+    <p style="font-size:13px;color:#555;">友だち追加などのイベントは件数だけを記録します。受信したメッセージは<a href="/tenant/line/inbox">受信箱</a>のスレッドとして保存され、<a href="/tenant/line/queues">キュー・ルール設定</a>のルールで担当へ割り当てられます（保存は仮名ユーザー ID とテキスト本文のみ。プロフィールは取得しません）。返信は受信箱から公式アカウントとして送信します。LIFF の到達計測は、ポータル画面から <code>/line/open?c=&lt;キャンペーンID&gt;</code> を呼ぶ形で、<code>u=&lt;仮名ユーザーID&gt;</code> を付けると以降のメッセージの帰属に使われます。</p>
+    <p><a href="/tenant/line/inbox">LINE 受信箱を開く</a> / <a href="/tenant/line/queues">キュー・ルール設定</a></p>`;
   return page("テナントコンソール", `
     <h1>テナントコンソール</h1>
     <p>テナント: <strong>${esc(tenant.name)}</strong>（<code>${esc(tid)}</code>）</p>

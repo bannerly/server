@@ -9,6 +9,8 @@ const parseArr = v => { try { const a = JSON.parse(v || "[]"); return Array.isAr
 const mapCampaign = r => r && ({ ...r, active: !!r.active, regions: parseArr(r.regions), cities: parseArr(r.cities), weekdays: parseArr(r.weekdays) });
 const mapZone = r => r || null;
 const mapPlan = r => r && ({ ...r, rule_regions: parseArr(r.rule_regions), rule_cities: parseArr(r.rule_cities), rule_weekdays: parseArr(r.rule_weekdays) });
+const mapLineQueue = r => r && ({ ...r, available: !!r.available });
+const mapLineRule = r => r && ({ ...r, active: !!r.active });
 
 export class D1Repo {
   constructor(db) { this.db = db; }
@@ -142,6 +144,36 @@ export class D1Repo {
       row.hour, row.tenant_id, row.zone_id, row.campaign_id, row.imp, row.click);
   }
   async listStatsHourly() { return this.all("SELECT * FROM stats_hourly ORDER BY hour"); }
+  async listLineQueues(tenantId) { const rows = tenantId ? await this.all("SELECT * FROM line_queues WHERE tenant_id=? ORDER BY created_at", tenantId) : await this.all("SELECT * FROM line_queues ORDER BY created_at"); return rows.map(mapLineQueue); }
+  async createLineQueue(q) { await this.run("INSERT INTO line_queues (id,tenant_id,name,advertiser_id,area,available,created_at) VALUES (?,?,?,?,?,?,?)", q.id, q.tenant_id, q.name, q.advertiser_id || "", q.area || "", q.available ? 1 : 0, q.created_at); return q; }
+  async getLineQueue(id) { return mapLineQueue(await this.first("SELECT * FROM line_queues WHERE id=?", id)); }
+  async updateLineQueue(id, patch) {
+    const cur = await this.getLineQueue(id); if (!cur) return null;
+    const n = { ...cur, ...patch };
+    await this.run("UPDATE line_queues SET name=?, advertiser_id=?, area=?, available=? WHERE id=?", n.name, n.advertiser_id || "", n.area || "", n.available ? 1 : 0, id);
+    return n;
+  }
+  async listLineRouteRules(tenantId) { const rows = tenantId ? await this.all("SELECT * FROM line_route_rules WHERE tenant_id=? ORDER BY priority, created_at", tenantId) : await this.all("SELECT * FROM line_route_rules ORDER BY priority, created_at"); return rows.map(mapLineRule); }
+  async createLineRouteRule(r) { await this.run("INSERT INTO line_route_rules (id,tenant_id,queue_id,priority,campaign_id,area,hours,keywords,active,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)", r.id, r.tenant_id, r.queue_id, r.priority || 100, r.campaign_id || "", r.area || "", r.hours || "", r.keywords || "", r.active ? 1 : 0, r.created_at); return r; }
+  async deleteLineRouteRule(id) { await this.run("DELETE FROM line_route_rules WHERE id=?", id); }
+  async getLineThreadByUser(tenantId, userId) { return this.first("SELECT * FROM line_threads WHERE tenant_id=? AND line_user_id=?", tenantId, userId); }
+  async createLineThread(t) { await this.run("INSERT INTO line_threads (id,tenant_id,line_user_id,queue_id,status,campaign_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)", t.id, t.tenant_id, t.line_user_id, t.queue_id || "", t.status || "open", t.campaign_id || "", t.created_at, t.updated_at); return t; }
+  async getLineThread(id) { return this.first("SELECT * FROM line_threads WHERE id=?", id); }
+  async listLineThreads(tenantId) { return this.all("SELECT * FROM line_threads WHERE tenant_id=? ORDER BY updated_at DESC", tenantId); }
+  async updateLineThread(id, patch) {
+    const cur = await this.getLineThread(id); if (!cur) return null;
+    const n = { ...cur, ...patch };
+    await this.run("UPDATE line_threads SET queue_id=?, status=?, campaign_id=?, updated_at=? WHERE id=?", n.queue_id || "", n.status || "open", n.campaign_id || "", n.updated_at, id);
+    return n;
+  }
+  async createLineMessage(m) { await this.run("INSERT INTO line_messages (id,thread_id,tenant_id,direction,msg_type,body,ts,created_at) VALUES (?,?,?,?,?,?,?,?)", m.id, m.thread_id, m.tenant_id, m.direction || "in", m.msg_type || "text", m.body || "", m.ts, m.created_at); return m; }
+  async listLineMessages(threadId) { return this.all("SELECT * FROM line_messages WHERE thread_id=? ORDER BY ts", threadId); }
+  async getLineAttribution(tenantId, userId) { return this.first("SELECT * FROM line_attribution WHERE tenant_id=? AND line_user_id=?", tenantId, userId); }
+  async setLineAttribution(tenantId, userId, campaignId) {
+    await this.run(`INSERT INTO line_attribution (tenant_id,line_user_id,campaign_id,updated_at) VALUES (?,?,?,?)
+      ON CONFLICT(tenant_id,line_user_id) DO UPDATE SET campaign_id=excluded.campaign_id, updated_at=excluded.updated_at`,
+      tenantId, userId, campaignId, Date.now());
+  }
   // スナップショットと配信トークンは KV 側で扱うため、D1 では未使用（worker が分岐）
   async putSnapshot() { throw new Error("snapshot is stored in KV"); }
   async getSnapshot() { return null; }
